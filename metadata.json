@@ -1,0 +1,7 @@
+{
+  "name": "HireMind AI",
+  "description": "Autonomous Multi-Modal Recruitment Intelligence and Behavioral Assessment Platform Using Artificial Intelligence",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

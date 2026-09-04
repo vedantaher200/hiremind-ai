@@ -6,6 +6,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));
 
 export let supabase: SupabaseClient | null = null;
+export const PROFILE_AVATARS_BUCKET = 'profile-avatars';
 export const supabaseConfigurationError = isSupabaseConfigured ? null : 'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.';
 
 if (isSupabaseConfigured) {
@@ -24,6 +25,7 @@ export const STORAGE_KEYS = {
   APPLICATIONS: 'hiremind_applications',
   RESUME_ANALYSES: 'hiremind_resume_analyses',
   INTERVIEWS: 'hiremind_interviews',
+  SCHEDULED_INTERVIEWS: 'hiremind_scheduled_interviews',
   TEST_ATTEMPTS: 'hiremind_test_attempts',
   RANKING_WEIGHTS: 'hiremind_ranking_weights',
   NOTIFICATIONS: 'hiremind_notifications',

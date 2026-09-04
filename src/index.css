@@ -1,1 +1,256 @@
 @import "tailwindcss";
+
+:root {
+	--hm-brand: #0f766e;
+	--hm-brand-dark: #115e59;
+	--hm-brand-soft: #e6f4f1;
+	--hm-brand-border: #b9dfd8;
+	--hm-surface: #fbfcfb;
+	--hm-panel: #ffffff;
+	--hm-border: #e2e8e6;
+	--hm-ink: #1d2927;
+	--hm-muted: #667572;
+	--hm-warning: #a16207;
+	--hm-danger: #b45309;
+}
+
+html {
+	background: var(--hm-surface);
+}
+
+body {
+	margin: 0;
+	background: var(--hm-surface);
+	color: var(--hm-ink);
+	font-family: ui-sans-serif, system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+	outline: 3px solid rgb(15 118 110 / 24%);
+	outline-offset: 2px;
+}
+
+/* Shared button contract. Existing page-specific classes remain supported,
+   while these rules prevent low-contrast utility combinations globally. */
+button {
+	min-height: 2.5rem;
+	font-weight: 600;
+	line-height: 1.25;
+	-webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled) {
+	cursor: pointer;
+}
+
+button:disabled {
+	background-color: #cbd5e1 !important;
+	border-color: #cbd5e1 !important;
+	color: #475569 !important;
+	opacity: 1 !important;
+	cursor: not-allowed !important;
+	box-shadow: none !important;
+}
+
+/* Primary-looking legacy buttons, including gradients, use the product brand. */
+button[class*="bg-gradient"],
+button[class*="bg-[#3525CD]"],
+button[class*="bg-orange-700"],
+button[class*="bg-orange-800"] {
+	background: var(--hm-brand) !important;
+	color: #ffffff !important;
+	border-color: var(--hm-brand) !important;
+}
+
+button[class*="bg-gradient"]:hover:not(:disabled),
+button[class*="bg-[#3525CD]"]:hover:not(:disabled),
+button[class*="bg-orange-700"]:hover:not(:disabled),
+button[class*="bg-orange-800"]:hover:not(:disabled) {
+	background: var(--hm-brand-dark) !important;
+	color: #ffffff !important;
+}
+
+/* Guard against the recurring white-on-white combination. */
+button[class*="bg-white"][class*="text-white"],
+button[class*="bg-transparent"][class*="text-white"] {
+	background: var(--hm-brand) !important;
+	color: #ffffff !important;
+	border-color: var(--hm-brand) !important;
+}
+
+button[class*="bg-white"]:not(:disabled):hover {
+	background: #f1f5f4 !important;
+	color: var(--hm-ink) !important;
+}
+
+.hm-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	min-height: 2.5rem;
+	padding: 0.625rem 1rem;
+	border: 1px solid transparent;
+	border-radius: 0.75rem;
+	font-size: 0.875rem;
+	font-weight: 700;
+	transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.hm-button-primary {
+	background: var(--hm-brand);
+	color: #ffffff;
+	box-shadow: 0 4px 10px rgb(15 118 110 / 16%);
+}
+
+.hm-button-primary:hover:not(:disabled),
+.hm-button-success:hover:not(:disabled) {
+	background: var(--hm-brand-dark);
+}
+
+.hm-button-secondary {
+	background: #ffffff;
+	border-color: var(--hm-border);
+	color: var(--hm-ink);
+}
+
+.hm-button-secondary:hover:not(:disabled) {
+	background: #f1f5f4;
+	border-color: var(--hm-brand-border);
+}
+
+.hm-button-outline {
+	background: transparent;
+	border-color: var(--hm-brand);
+	color: var(--hm-brand);
+}
+
+.hm-button-outline:hover:not(:disabled) {
+	background: var(--hm-brand-soft);
+}
+
+.hm-button-danger {
+	background: #b45309;
+	color: #ffffff;
+}
+
+.hm-button-danger:hover:not(:disabled) {
+	background: #92400e;
+}
+
+.hm-button-success {
+	background: #0f766e;
+	color: #ffffff;
+}
+
+.hm-button-spinner {
+	width: 0.875rem;
+	height: 0.875rem;
+	border: 2px solid rgb(255 255 255 / 45%);
+	border-top-color: currentColor;
+	border-radius: 999px;
+	animation: hm-button-spin 700ms linear infinite;
+}
+
+@keyframes hm-button-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* Existing utility tokens are kept in place so page behavior stays unchanged,
+	 while this layer gives the whole product one restrained brand system. */
+[class~="bg-[#3525CD]"],
+[class~="bg-orange-700"],
+[class~="bg-orange-800"] {
+	background-color: var(--hm-brand) !important;
+}
+
+[class~="bg-[#3525CD]"]:hover,
+[class~="bg-orange-700"]:hover,
+[class~="bg-orange-800"]:hover {
+	background-color: var(--hm-brand-dark) !important;
+}
+
+[class~="text-[#3525CD]"],
+[class~="text-[#4F46E5]"],
+[class~="text-orange-700"],
+[class~="text-orange-800"] {
+	color: var(--hm-brand) !important;
+}
+
+[class~="border-[#3525CD]"],
+[class~="border-orange-100"],
+[class~="border-orange-200"] {
+	border-color: var(--hm-brand-border) !important;
+}
+
+[class~="bg-indigo-50"],
+[class~="bg-indigo-50/50"],
+[class~="bg-indigo-50/70"],
+[class~="bg-indigo-50/80"],
+[class~="bg-orange-50"],
+[class~="bg-orange-100"] {
+	background-color: var(--hm-brand-soft) !important;
+}
+
+[class~="border-indigo-100"],
+[class~="border-indigo-200"] {
+	border-color: var(--hm-brand-border) !important;
+}
+
+[class~="bg-[#EEF2FF]"] {
+	background-color: var(--hm-brand-soft) !important;
+}
+
+[class~="text-[#712AE2]"],
+[class~="text-purple-600"],
+[class~="text-purple-700"] {
+	color: var(--hm-brand-dark) !important;
+}
+
+[class~="bg-purple-50"],
+[class~="bg-purple-50/20"] {
+	background-color: #edf7f5 !important;
+}
+
+[class~="border-purple-100"],
+[class~="border-purple-200"] {
+	border-color: var(--hm-brand-border) !important;
+}
+
+[class*="from-[#3525CD]"],
+[class*="to-[#712AE2]"],
+[class*="from-indigo-"],
+[class*="to-purple-"] {
+	--tw-gradient-from: var(--hm-brand) var(--tw-gradient-from-position) !important;
+	--tw-gradient-to: var(--hm-brand-dark) var(--tw-gradient-to-position) !important;
+	--tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+[class*="shadow-indigo-"],
+[class*="shadow-[0_10px_20px_-5px_rgba(79,70,229"] {
+	--tw-shadow-color: rgb(15 118 110 / 20%) !important;
+}
+
+[class~="ring-indigo-100"],
+[class~="ring-indigo-200"],
+[class~="ring-indigo-50"] {
+	--tw-ring-color: var(--hm-brand-border) !important;
+}
+
+@media (max-width: 640px) {
+	.max-w-7xl {
+		max-width: 100%;
+	}
+}

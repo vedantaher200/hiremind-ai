@@ -14,6 +14,7 @@ import { AIInterviewPage } from './pages/candidate/AIInterviewPage';
 import { TestsPage } from './pages/candidate/TestsPage';
 import { ResultsPage } from './pages/candidate/ResultsPage';
 import { CandidateProfilePage } from './pages/candidate/CandidateProfilePage';
+import { JobsPage } from './pages/candidate/JobsPage';
 
 // Recruiter Pages
 import { RecruiterDashboard } from './pages/recruiter/RecruiterDashboard';
@@ -69,6 +70,7 @@ const MainAppContent: React.FC = () => {
     'results',
     'candidate-profile',
     'profile',
+    'opportunities',
   ];
 
   const recruiterOnlyPages = [
@@ -194,6 +196,9 @@ const MainAppContent: React.FC = () => {
         return (
           <CandidateProfilePage onNavigate={handleNavigate} />
         );
+
+      case 'opportunities':
+        return <JobsPage />;
 
       // =========================
       // Shared Views

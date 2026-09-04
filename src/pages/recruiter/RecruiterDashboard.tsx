@@ -21,31 +21,35 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
   onNavigate,
   onOpenCreateJob
 }) => {
-  const { applications } = useData();
+  const { applications, jobs, scheduledInterviews } = useData();
+
+  const activeJobs = jobs.filter(job => job.status === 'Active');
+  const uniqueCandidates = new Set(applications.map(application => application.candidateId));
+  const hiredCount = applications.filter(application => application.status === 'Hired').length;
 
   const pipelineStages = [
     {
       label: 'Sourced',
-      count: 64,
-      percentage: 100,
-      color: 'bg-blue-500'
+      count: applications.length,
+      percentage: applications.length ? 100 : 0,
+      color: 'bg-slate-500'
     },
     {
       label: 'Interviewed',
-      count: 42,
-      percentage: 65,
-      color: 'bg-indigo-600'
+      count: applications.filter(application => application.status === 'Interviewed').length,
+      percentage: applications.length ? Math.round(applications.filter(application => application.status === 'Interviewed').length / applications.length * 100) : 0,
+      color: 'bg-[#0F766E]'
     },
     {
       label: 'Technical',
-      count: 28,
-      percentage: 44,
-      color: 'bg-purple-600'
+      count: applications.filter(application => application.status === 'Technical').length,
+      percentage: applications.length ? Math.round(applications.filter(application => application.status === 'Technical').length / applications.length * 100) : 0,
+      color: 'bg-amber-500'
     },
     {
       label: 'Offer',
-      count: 6,
-      percentage: 10,
+      count: hiredCount,
+      percentage: applications.length ? Math.round(hiredCount / applications.length * 100) : 0,
       color: 'bg-emerald-500'
     }
   ];
@@ -101,10 +105,10 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         >
           <StatCard
             label="Active Jobs"
-            value="8"
+            value={String(activeJobs.length)}
             icon={Briefcase}
             accentColor="indigo"
-            subtext="4 Engineering, 2 Product"
+            subtext="Published roles in your workspace"
             trend={{ value: '+2 this month', isPositive: true }}
           />
         </button>
@@ -118,10 +122,10 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         >
           <StatCard
             label="Candidates"
-            value="156"
+            value={String(uniqueCandidates.size)}
             icon={Users}
             accentColor="purple"
-            subtext="42 high precision matches"
+            subtext="Candidates from your applications"
             trend={{ value: '+18% vs last week', isPositive: true }}
           />
         </button>
@@ -135,10 +139,10 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         >
           <StatCard
             label="Interviews"
-            value="24"
+            value={String(scheduledInterviews.length)}
             icon={Video}
             accentColor="emerald"
-            subtext="Autonomous AI evaluations"
+            subtext="Scheduled recruiter interviews"
             trend={{ value: '94% completed', isPositive: true }}
           />
         </button>
@@ -152,10 +156,10 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
         >
           <StatCard
             label="Hired"
-            value="6"
+            value={String(hiredCount)}
             icon={UserCheck}
             accentColor="amber"
-            subtext="Average time to hire: 9 days"
+            subtext="Applications marked hired"
             trend={{ value: '3x faster', isPositive: true }}
           />
         </button>
@@ -234,8 +238,8 @@ export const RecruiterDashboard: React.FC<RecruiterDashboardProps> = ({
           <button
             onClick={() => onNavigate('candidates-list')}
             className="text-xs font-bold text-[#3525CD] hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <span>View All 156 Candidates</span>
+            >
+              <span>View All {uniqueCandidates.size} Candidates</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

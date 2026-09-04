@@ -17,30 +17,40 @@ interface RecruiterProfilePageProps {
 }
 
 export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, uploadAvatar } = useAuth();
 
   const [showEditModal, setShowEditModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [editTitle, setEditTitle] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editBio, setEditBio] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editWebsite, setEditWebsite] = useState('');
 
   useEffect(() => {
     setEditName(user?.name || '');
     setEditTitle(user?.title || '');
     setEditLocation(user?.location || '');
     setEditBio(user?.bio || '');
+    setEditPhone(user?.phone || '');
+    setEditWebsite(user?.organizationWebsite || '');
   }, [user]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
 
     try {
       await updateProfile({
         name: editName.trim(),
         title: editTitle.trim(),
         location: editLocation.trim(),
-        bio: editBio.trim()
+        bio: editBio.trim(),
+        phone: editPhone.trim(),
+        organizationWebsite: editWebsite.trim()
       });
 
       setShowEditModal(false);
@@ -50,6 +60,8 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
           ? error.message
           : 'Unable to update profile.'
       );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -65,23 +77,12 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
       return;
     }
 
-    const reader = new FileReader();
-
-    reader.onloadend = async () => {
-      try {
-        await updateProfile({
-          avatar: reader.result as string
-        });
-      } catch (error) {
-        alert(
-          error instanceof Error
-            ? error.message
-            : 'Unable to update profile picture.'
-        );
-      }
-    };
-
-    reader.readAsDataURL(file);
+    setIsUploadingAvatar(true);
+    setAvatarMessage(null);
+    void uploadAvatar(file)
+      .then(() => setAvatarMessage('Profile picture updated.'))
+      .catch(error => setAvatarMessage(error instanceof Error ? error.message : 'Unable to update profile picture.'))
+      .finally(() => setIsUploadingAvatar(false));
   };
 
   return (
@@ -128,7 +129,7 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
 
                 <label
                   htmlFor="recruiter-avatar-upload"
-                  className="absolute -bottom-1 -right-1 w-10 h-10 bg-[#3525CD] text-white rounded-full flex items-center justify-center cursor-pointer border-2 border-white shadow-md hover:bg-[#281BA8] transition-colors"
+                  className={`absolute -bottom-1 -right-1 w-10 h-10 bg-[#3525CD] text-white rounded-full flex items-center justify-center border-2 border-white shadow-md transition-colors ${isUploadingAvatar ? 'opacity-60 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-[#281BA8]'}`}
                   title="Change profile picture"
                 >
                   <Plus className="w-5 h-5" />
@@ -139,11 +140,14 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
                   type="file"
                   accept="image/*"
                   onChange={handleAvatarChange}
+                  disabled={isUploadingAvatar}
                   className="hidden"
                 />
 
                 <span className="absolute bottom-1 right-10 w-4 h-4 bg-emerald-500 rounded-full ring-2 ring-white" />
               </div>
+
+              {avatarMessage && <p className={`mt-2 text-xs font-semibold ${avatarMessage.includes('updated') ? 'text-emerald-700' : 'text-rose-700'}`}>{avatarMessage}</p>}
 
               <h2 className="text-xl font-extrabold text-[#191C1D] mt-5">
                 {user?.name || 'Recruiter'}
@@ -399,6 +403,17 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
             />
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="font-bold text-[#464555] block mb-1.5">Phone Number</label>
+              <input type="tel" value={editPhone} onChange={event => setEditPhone(event.target.value)} placeholder="e.g. +91 9876543210" className="w-full p-3 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-[#191C1D] outline-none focus:ring-2 focus:ring-[#3525CD]/20 focus:border-[#3525CD]" />
+            </div>
+            <div>
+              <label className="font-bold text-[#464555] block mb-1.5">Organization Website</label>
+              <input type="url" value={editWebsite} onChange={event => setEditWebsite(event.target.value)} placeholder="https://company.example" className="w-full p-3 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-[#191C1D] outline-none focus:ring-2 focus:ring-[#3525CD]/20 focus:border-[#3525CD]" />
+            </div>
+          </div>
+
           <div>
             <label className="font-bold text-[#464555] block mb-1.5">
               Professional Summary
@@ -424,10 +439,11 @@ export const RecruiterProfilePage: React.FC<RecruiterProfilePageProps> = () => {
 
             <button
               type="submit"
-              className="px-5 py-2.5 bg-[#3525CD] text-white font-bold rounded-xl hover:bg-[#281BA8] transition-colors flex items-center gap-2"
+              disabled={isSaving}
+              className="px-5 py-2.5 bg-[#0F766E] text-white font-bold rounded-xl hover:bg-[#115E59] disabled:bg-[#94A3B8] disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              Save Changes
+              {isSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>

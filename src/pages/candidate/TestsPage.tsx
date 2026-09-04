@@ -9,6 +9,7 @@ import confetti from 'canvas-confetti';
 import { useData } from '../../context/DataContext';
 import { AssessmentTest } from '../../types';
 import { Modal } from '../../components/common/Modal';
+import { useAuth } from '../../context/AuthContext';
 
 interface TestsPageProps {
   onNavigate: (page: string) => void;
@@ -16,6 +17,7 @@ interface TestsPageProps {
 
 export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
   const { tests, testAttempts, recordTestAttempt } = useData();
+  const { user } = useAuth();
 
   const [activeCategory, setActiveCategory] = useState<
     'Aptitude Test' | 'Coding Test' | 'Technical MCQs'
@@ -66,7 +68,7 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
         })[0]
       : null;
 
-  const handleSubmitTest = () => {
+  const handleSubmitTest = async () => {
     if (!activeTest || hasSubmittedRef.current) return;
 
     hasSubmittedRef.current = true;
@@ -100,18 +102,25 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
     const timeSpentSeconds =
       activeTest.durationMinutes * 60 - timeRemainingRef.current;
 
-    recordTestAttempt({
+    if (!user) return;
+    try {
+      await recordTestAttempt({
       testId: activeTest.id,
       testTitle: activeTest.title,
       category: activeTest.category,
-      candidateId: 'cand-rahul-01',
+      candidateId: user.id,
       score: pointsEarned,
       totalPoints: activeTest.totalPoints,
       percentage,
       status: percentage >= 70 ? 'Passed' : 'Failed',
       timeSpentMinutes: Math.max(1, Math.ceil(timeSpentSeconds / 60)),
       answers: latestAnswers
-    });
+      });
+    } catch (error) {
+      hasSubmittedRef.current = false;
+      alert(error instanceof Error ? error.message : 'Unable to save your assessment result.');
+      return;
+    }
 
     setResultModal({
       score: pointsEarned,
@@ -143,7 +152,7 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
           clearInterval(interval);
 
           setTimeout(() => {
-            handleSubmitTest();
+            void handleSubmitTest();
           }, 0);
 
           return 0;
@@ -543,7 +552,7 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
                     handleStartTest(currentSelectedTest)
                   }
                   disabled={!agreeRules}
-                  className="w-full sm:w-auto px-8 py-3 rounded-xl bg-gradient-to-r from-[#3525CD] to-[#712AE2] text-white text-xs font-bold shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/35 hover:scale-[1.02] disabled:opacity-50 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-8 py-3 rounded-xl bg-[#0F766E] text-white text-xs font-bold shadow-sm hover:bg-[#115E59] active:bg-[#0B4F4A] disabled:bg-[#CBD5E1] disabled:text-[#475569] disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E] transition-colors flex items-center justify-center gap-2 enabled:cursor-pointer"
                 >
                   <span>Start Test</span>
                   <ArrowRight className="w-4 h-4" />

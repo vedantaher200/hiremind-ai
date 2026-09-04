@@ -65,7 +65,7 @@ if (file.type.includes('text') || file.name.toLowerCase().endsWith('.txt')) {
       const targetJob = jobs.find(job => job.status === 'Active');
       if (!targetJob) throw new Error('No active job is available. A job with required skills is needed for ATS matching.');
       const result = await analyzeResumeContent(extractedText, file.name, targetJob.title, targetJob.requiredSkills, user.id);
-      saveResumeAnalysis(result);
+      await saveResumeAnalysis(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Resume analysis failed.');
     } finally {
@@ -171,7 +171,7 @@ if (file.type.includes('text') || file.name.toLowerCase().endsWith('.txt')) {
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="mt-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#3525CD] to-[#712AE2] text-white text-xs font-bold shadow-md shadow-indigo-500/25 hover:shadow-lg hover:shadow-indigo-500/35 hover:scale-[1.02] transition-all cursor-pointer"
+              className="mt-2 px-6 py-2.5 rounded-xl bg-[#0F766E] text-white text-xs font-bold shadow-sm hover:bg-[#115E59] active:bg-[#0B4F4A] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E] transition-colors cursor-pointer"
             >
               Choose File
             </button>

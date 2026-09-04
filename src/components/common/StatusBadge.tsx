@@ -16,15 +16,15 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
       case 'interviewed':
       case 'in progress':
       case 'recommended':
-        return 'bg-indigo-50 text-[#3525CD] border-indigo-200';
+        return 'bg-[#E6F4F1] text-[#0F766E] border-[#B9DFD8]';
       case 'technical':
       case 'screening':
       case 'active':
-        return 'bg-purple-50 text-[#712AE2] border-purple-200';
+        return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'sourced':
       case 'applied':
       case 'scheduled':
-        return 'bg-blue-50 text-blue-700 border-blue-200';
+        return 'bg-slate-100 text-slate-700 border-slate-200';
       case 'rejected':
       case 'failed':
       case 'not recommended':

@@ -15,7 +15,8 @@ import {
   getStoredItem,
   isSupabaseConfigured,
   setStoredItem,
-  supabase
+  supabase,
+  PROFILE_AVATARS_BUCKET
 } from '../lib/supabase';
 
 import { createClientId } from '../lib/id';
@@ -28,7 +29,8 @@ interface AuthContextType {
 
   login: (
     email: string,
-    password: string
+    password: string,
+    expectedRole?: UserRole
   ) => Promise<void>;
 
   signup: (
@@ -45,16 +47,26 @@ interface AuthContextType {
     email: string
   ) => Promise<void>;
 
+  resendConfirmation: (email: string) => Promise<void>;
+
   logout: () => Promise<void>;
 
   updateProfile: (
     updates: Partial<UserProfile>
   ) => Promise<void>;
+
+  uploadAvatar: (file: File) => Promise<void>;
 }
 
 const AuthContext = createContext<
   AuthContextType | undefined
 >(undefined);
+
+const authRedirectUrl = () => {
+  const configuredUrl = import.meta.env.VITE_APP_URL?.trim();
+  const baseUrl = configuredUrl || window.location.origin;
+  return `${baseUrl.replace(/\/$/, '')}/?confirmed=1`;
+};
 
 /* =========================================================
    PROFILE MAPPER
@@ -83,6 +95,14 @@ const profileFromRow = (
     row.avatar_url ||
     row.avatar_path ||
     undefined,
+
+  linkedinUrl: row.linkedin_url || undefined,
+
+  githubUrl: row.github_url || undefined,
+
+  portfolioUrl: row.portfolio_url || undefined,
+
+  organizationWebsite: row.organization_website || undefined,
 
   phone:
     row.phone ||
@@ -153,8 +173,8 @@ export const AuthProvider: React.FC<{
       id: string;
       email?: string | null;
     }
-  ) => {
-    if (!supabase) return;
+  ): Promise<UserProfile> => {
+    if (!supabase) throw new Error('Supabase is not configured.');
 
     const { data, error } = await supabase
       .from('profiles')
@@ -168,12 +188,9 @@ export const AuthProvider: React.FC<{
       );
     }
 
-    setUser(
-      profileFromRow(
-        data,
-        authUser.email || ''
-      )
-    );
+    const profile = profileFromRow(data, authUser.email || '');
+    setUser(profile);
+    return profile;
   };
 
   /* =========================================================
@@ -268,7 +285,8 @@ export const AuthProvider: React.FC<{
 
   const login = async (
     email: string,
-    password: string
+    password: string,
+    expectedRole?: UserRole
   ) => {
     if (!email.trim() || !password) {
       throw new Error(
@@ -293,7 +311,18 @@ export const AuthProvider: React.FC<{
         );
       }
 
-      await loadProfile(data.user);
+      if (!data.user.email_confirmed_at && !data.user.confirmed_at) {
+        await supabase.auth.signOut();
+        throw new Error('Please confirm your email before signing in. Use the resend option if you need a new confirmation link.');
+      }
+
+      const profile = await loadProfile(data.user);
+
+      if (expectedRole && profile.role !== expectedRole) {
+        await supabase.auth.signOut();
+        setUser(null);
+        throw new Error(`These credentials belong to a ${profile.role === 'recruiter' ? 'Recruiter' : 'Candidate'} account. Please switch to ${profile.role === 'recruiter' ? 'Recruiter' : 'Candidate'} or use the correct credentials.`);
+      }
 
       return;
     }
@@ -321,6 +350,10 @@ export const AuthProvider: React.FC<{
       password: _password,
       ...profile
     } = account;
+
+    if (expectedRole && account.role !== expectedRole) {
+      throw new Error(`These credentials belong to a ${account.role === 'recruiter' ? 'Recruiter' : 'Candidate'} account. Please switch to ${account.role === 'recruiter' ? 'Recruiter' : 'Candidate'} or use the correct credentials.`);
+    }
 
     setUser(profile);
   };
@@ -380,6 +413,7 @@ export const AuthProvider: React.FC<{
           email: normalizedEmail,
           password,
           options: {
+            emailRedirectTo: authRedirectUrl(),
             data: {
               full_name: name.trim(),
               role: userRole,
@@ -394,6 +428,13 @@ export const AuthProvider: React.FC<{
           error?.message ||
             'Unable to create account.'
         );
+      }
+
+      // Supabase intentionally returns an obfuscated user for an address that
+      // already exists when email confirmation is enabled. Do not present that
+      // response as a newly-created account or claim a mail was sent.
+      if (!data.session && data.user.identities?.length === 0) {
+        throw new Error('An account with this email already exists. Sign in or request a new confirmation email.');
       }
 
       if (!data.session) {
@@ -481,14 +522,29 @@ export const AuthProvider: React.FC<{
       await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
         {
-          redirectTo:
-            `${window.location.origin}/`
+          redirectTo: authRedirectUrl()
         }
       );
 
     if (error) {
       throw new Error(error.message);
     }
+  };
+
+  const resendConfirmation = async (email: string) => {
+    if (!supabase) {
+      throw new Error('Email confirmation is available only when Supabase is configured.');
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+      throw new Error('Enter the email address used to create your account.');
+    }
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: normalizedEmail,
+      options: { emailRedirectTo: authRedirectUrl() }
+    });
+    if (error) throw new Error(error.message);
   };
 
   /* =========================================================
@@ -549,6 +605,18 @@ export const AuthProvider: React.FC<{
             updates.avatar ??
             user.avatar,
 
+          linkedin_url:
+            updates.linkedinUrl ?? user.linkedinUrl,
+
+          github_url:
+            updates.githubUrl ?? user.githubUrl,
+
+          portfolio_url:
+            updates.portfolioUrl ?? user.portfolioUrl,
+
+          organization_website:
+            updates.organizationWebsite ?? user.organizationWebsite,
+
           skills:
             updates.skills ??
             user.skills,
@@ -566,6 +634,17 @@ export const AuthProvider: React.FC<{
       if (error) {
         throw new Error(error.message);
       }
+    } else {
+      const accounts = getStoredItem<Array<UserProfile & { password: string }>>(
+        STORAGE_KEYS.USERS,
+        []
+      );
+      setStoredItem(
+        STORAGE_KEYS.USERS,
+        accounts.map(account =>
+          account.id === user.id ? { ...account, ...updates } : account
+        )
+      );
     }
 
     setUser(current =>
@@ -576,6 +655,38 @@ export const AuthProvider: React.FC<{
           }
         : current
     );
+  };
+
+  const uploadAvatar = async (file: File) => {
+    if (!user) throw new Error('You must be signed in to upload an avatar.');
+    if (!file.type.startsWith('image/')) throw new Error('Please select an image file.');
+    if (file.size > 3 * 1024 * 1024) throw new Error('Profile images must be 3MB or smaller.');
+
+    if (!supabase) {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Unable to read the image.'));
+        reader.readAsDataURL(file);
+      });
+      await updateProfile({ avatar: dataUrl });
+      return;
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const path = `${user.id}/avatar-${Date.now()}.${extension}`;
+    const { error: uploadError } = await supabase.storage
+      .from(PROFILE_AVATARS_BUCKET)
+      .upload(path, file, { upsert: false, contentType: file.type, cacheControl: '3600' });
+    if (uploadError) {
+      if (/bucket not found/i.test(uploadError.message)) {
+        throw new Error(`Avatar upload failed: The Supabase Storage bucket "${PROFILE_AVATARS_BUCKET}" is missing. Apply supabase/migrations/004_profile_avatar_storage.sql first.`);
+      }
+      throw new Error(`Avatar upload failed: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage.from(PROFILE_AVATARS_BUCKET).getPublicUrl(path);
+    await updateProfile({ avatar: data.publicUrl });
   };
 
   /* =========================================================
@@ -594,8 +705,10 @@ export const AuthProvider: React.FC<{
         login,
         signup,
         resetPassword,
+        resendConfirmation,
         logout,
         updateProfile
+        ,uploadAvatar
       }}
     >
       {children}

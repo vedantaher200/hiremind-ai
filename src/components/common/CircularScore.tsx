@@ -30,7 +30,7 @@ export const CircularScore: React.FC<CircularScoreProps> = ({
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#EEF2FF"
+            stroke="#E6F4F1"
             strokeWidth={strokeWidth}
             fill="transparent"
           />
@@ -48,8 +48,8 @@ export const CircularScore: React.FC<CircularScoreProps> = ({
           />
           <defs>
             <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#3525CD" />
-              <stop offset="100%" stopColor="#712AE2" />
+              <stop offset="0%" stopColor="#0F766E" />
+              <stop offset="100%" stopColor="#115E59" />
             </linearGradient>
           </defs>
         </svg>

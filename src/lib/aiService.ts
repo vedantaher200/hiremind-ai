@@ -1,200 +1,41 @@
-import { GoogleGenAI } from '@google/genai';
-import { ResumeAnalysis, InterviewResponse, AIHiringRecommendation } from '../types';
+import { ResumeAnalysis, AIHiringRecommendation } from '../types';
+import { supabase } from './supabase';
 
-const geminiApiKey = (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+type ResumePayload = Pick<ResumeAnalysis, 'atsCompatibilityScore' | 'extractedSkills' | 'strengths' | 'missingSkills' | 'experienceSummary' | 'educationSummary' | 'improvementSuggestions'>;
 
-let aiClient: GoogleGenAI | null = null;
-if (geminiApiKey) {
-  try {
-    aiClient = new GoogleGenAI({ apiKey: geminiApiKey });
-  } catch (e) {
-    console.warn('Gemini client init warning:', e);
-  }
-}
+const aiRequest = async <T,>(action: string, payload: Record<string, unknown>): Promise<T> => {
+  const token = supabase ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
+  const response = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ action, ...payload }) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || 'AI service is unavailable.');
+  return body as T;
+};
 
-/**
- * Intelligent Resume Parsing & ATS Scoring Engine
- */
-export async function analyzeResumeContent(
-  resumeText: string,
-  fileName: string,
-  targetJobRole: string,
-  requiredSkills: string[] = [],
-  candidateId: string
-): Promise<ResumeAnalysis> {
+const ruleBasedAnalysis = (resumeText: string, requiredSkills: string[]): ResumePayload => {
+  const knownSkills = ['Python', 'TypeScript', 'JavaScript', 'SQL', 'Go', 'Java', 'C++', 'React', 'Next.js', 'FastAPI', 'Node.js', 'Express', 'AWS', 'Docker', 'Kubernetes', 'PostgreSQL', 'Git'];
+  const detected = knownSkills.filter(skill => resumeText.toLowerCase().includes(skill.toLowerCase()));
+  const matches = detected.filter(skill => requiredSkills.some(required => required.toLowerCase() === skill.toLowerCase()));
+  const missing = requiredSkills.filter(skill => !detected.some(found => found.toLowerCase() === skill.toLowerCase()));
+  return { atsCompatibilityScore: requiredSkills.length ? Math.round((matches.length / requiredSkills.length) * 100) : 0, extractedSkills: detected, strengths: matches.length ? [`Matches role requirements: ${matches.join(', ')}`] : ['Resume text was parsed successfully.'], missingSkills: missing, experienceSummary: 'Review the source resume for role tenure and impact details.', educationSummary: 'Review the source resume for education details.', improvementSuggestions: missing.length ? [`Add evidence of: ${missing.join(', ')}`] : ['Tailor accomplishments to the selected role.'] };
+};
+
+export async function analyzeResumeContent(resumeText: string, fileName: string, targetJobRole: string, requiredSkills: string[] = [], candidateId: string): Promise<ResumeAnalysis> {
   if (resumeText.trim().length < 50) throw new Error('The uploaded file does not contain enough readable text to analyze.');
-  const cleanFileName = fileName || 'Uploaded_Resume.pdf';
-  
-  if (aiClient && resumeText.trim().length > 50) {
-    try {
-      const prompt = `You are HireMind AI, an autonomous multi-modal recruitment intelligence engine.
-Analyze the following candidate resume text against the target role: "${targetJobRole}".
-Resume Text:
-"""
-${resumeText.slice(0, 4000)}
-"""
-
-Return ONLY a valid JSON object matching this exact TypeScript structure:
-{
-  "atsCompatibilityScore": number (0-100),
-  "extractedSkills": string[],
-  "strengths": string[],
-  "missingSkills": string[],
-  "experienceSummary": string,
-  "educationSummary": string,
-  "improvementSuggestions": string[]
-}`;
-
-      const response = await aiClient.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json'
-        }
-      });
-
-      const responseText = response.text || '';
-      const parsed = JSON.parse(responseText);
-
-      return {
-        id: `res-${Date.now()}`,
-        candidateId,
-        fileName: cleanFileName,
-        uploadedAt: new Date().toISOString(),
-        fileSize: '1.2 MB',
-        atsCompatibilityScore: Math.min(100, Math.max(0, Number(parsed.atsCompatibilityScore))),
-        extractedSkills: Array.isArray(parsed.extractedSkills) ? parsed.extractedSkills : [],
-        strengths: Array.isArray(parsed.strengths) ? parsed.strengths : [],
-        missingSkills: Array.isArray(parsed.missingSkills) ? parsed.missingSkills : [],
-        experienceSummary: String(parsed.experienceSummary || ''),
-        educationSummary: String(parsed.educationSummary || ''),
-        improvementSuggestions: Array.isArray(parsed.improvementSuggestions) ? parsed.improvementSuggestions : [],
-        targetRole: targetJobRole,
-        rawText: resumeText
-        ,source: 'ai'
-      };
-    } catch (err) {
-      console.warn('Gemini API resume parsing fallback used:', err);
-    }
-  }
-
-  // Transparent deterministic analysis based only on supplied text and job requirements.
-  const keywordsMap: Record<string, string[]> = {
-    languages: ['Python', 'TypeScript', 'JavaScript', 'SQL', 'Go', 'Java', 'C++'],
-    frameworks: ['React', 'Next.js', 'PyTorch', 'TensorFlow', 'FastAPI', 'Node.js', 'Express', 'Tailwind CSS'],
-    cloudOps: ['AWS', 'Docker', 'Kubernetes', 'PostgreSQL', 'Redis', 'GraphQL', 'CI/CD', 'Git']
-  };
-
-  const detectedSkills: string[] = [];
-  const lower = resumeText.toLowerCase();
-
-  [...keywordsMap.languages, ...keywordsMap.frameworks, ...keywordsMap.cloudOps].forEach(skill => {
-    if (lower.includes(skill.toLowerCase())) {
-      detectedSkills.push(skill);
-    }
-  });
-
-  const finalSkills = detectedSkills.slice(0, 20);
-  const normalizedRequirements = requiredSkills.map(skill => skill.toLowerCase());
-  const matchingSkills = finalSkills.filter(skill => normalizedRequirements.includes(skill.toLowerCase()));
-  const missingSkills = requiredSkills.filter(skill => !finalSkills.some(found => found.toLowerCase() === skill.toLowerCase()));
-  const score = requiredSkills.length ? Math.round((matchingSkills.length / requiredSkills.length) * 100) : 0;
-
-  return {
-    id: `res-${Date.now()}`,
-    candidateId,
-    fileName: cleanFileName,
-    uploadedAt: new Date().toISOString(),
-    fileSize: '1.4 MB',
-    atsCompatibilityScore: score,
-    extractedSkills: finalSkills,
-    strengths: matchingSkills.length ? [`Matches job skills: ${matchingSkills.join(', ')}`] : [],
-    missingSkills,
-    experienceSummary: 'Rule-based analysis does not infer experience; review the original resume text.',
-    educationSummary: 'Rule-based analysis does not infer education; review the original resume text.',
-    improvementSuggestions: missingSkills.length ? [`Add evidence of: ${missingSkills.join(', ')}`] : ['Select a job with required skills to calculate a match.'],
-    targetRole: targetJobRole,
-    rawText: resumeText,
-    source: 'rules'
-  };
+  let result: ResumePayload;
+  let source: 'rules' | 'ai' = 'rules';
+  try { result = await aiRequest<ResumePayload>('analyze-resume', { resumeText: resumeText.slice(0, 12000), targetJobRole, requiredSkills }); source = 'ai'; }
+  catch (error) { console.warn('Using rule-based resume analysis:', error); result = ruleBasedAnalysis(resumeText, requiredSkills); }
+  return { id: `res-${Date.now()}`, candidateId, fileName: fileName || 'Uploaded_Resume', uploadedAt: new Date().toISOString(), fileSize: 'Unknown', targetRole: targetJobRole, rawText: resumeText, source, ...result };
 }
 
-/**
- * Real-time Speech / Response Analyzer for AI Interview
- */
-export function analyzeInterviewResponse(
-  questionText: string,
-  answerText: string,
-  durationSeconds: number
-): {
-  clarity: 'Excellent' | 'Good' | 'Fair' | 'Needs Work';
-  tone: 'Professional' | 'Confident' | 'Casual' | 'Hesitant';
-  score: number;
-  aiFeedback: string;
-} {
+export function analyzeInterviewResponse(_questionText: string, answerText: string, _durationSeconds: number) {
   const wordCount = answerText.trim().split(/\s+/).filter(Boolean).length;
-  
-  let clarity: 'Excellent' | 'Good' | 'Fair' | 'Needs Work' = 'Good';
-  let tone: 'Professional' | 'Confident' | 'Casual' | 'Hesitant' = 'Professional';
-  let score = 85;
-
-  if (wordCount > 60) {
-    clarity = 'Excellent';
-    tone = 'Confident';
-    score = 92;
-  } else if (wordCount > 25) {
-    clarity = 'Good';
-    tone = 'Professional';
-    score = 86;
-  } else if (wordCount > 10) {
-    clarity = 'Fair';
-    tone = 'Casual';
-    score = 75;
-  } else {
-    clarity = 'Needs Work';
-    tone = 'Hesitant';
-    score = 65;
-  }
-
-  const aiFeedback = wordCount > 40
-    ? 'Well-structured response. Directly addressed the core trade-offs and provided concrete examples from past engineering practice.'
-    : 'Clear and concise answer. Could be elevated by mentioning specific architectural metrics and quantitative business results.';
-
-  return { clarity, tone, score, aiFeedback };
+  const score = wordCount >= 60 ? 90 : wordCount >= 30 ? 80 : wordCount >= 12 ? 70 : 55;
+  return { clarity: score >= 85 ? 'Excellent' as const : score >= 75 ? 'Good' as const : score >= 65 ? 'Fair' as const : 'Needs Work' as const, tone: score >= 85 ? 'Confident' as const : score >= 70 ? 'Professional' as const : 'Hesitant' as const, score, aiFeedback: wordCount >= 30 ? 'Your answer has useful detail. Add a concrete outcome or metric to make it stronger.' : 'Expand your response with context, actions, and measurable outcomes.' };
 }
 
-/**
- * Generate Comprehensive Recruiter Recommendation
- */
-export function generateCandidateRecommendation(
-  name: string,
-  role: string,
-  atsScore: number,
-  interviewScore: number,
-  codingScore: number,
-  communicationScore: number
-): AIHiringRecommendation {
+export function generateCandidateRecommendation(name: string, role: string, atsScore: number, interviewScore: number, codingScore: number, communicationScore: number): AIHiringRecommendation {
   const avg = Math.round((atsScore + interviewScore + codingScore + communicationScore) / 4);
-
-  let recommendationLevel: 'Strongly Recommended' | 'Recommended' | 'Conditional' | 'Not Recommended' = 'Strongly Recommended';
-  if (avg >= 88) recommendationLevel = 'Strongly Recommended';
-  else if (avg >= 78) recommendationLevel = 'Recommended';
-  else if (avg >= 65) recommendationLevel = 'Conditional';
-  else recommendationLevel = 'Not Recommended';
-
-  return {
-    recommendationLevel,
-    overallMatchPercentage: avg,
-    executiveSummary: `${name} demonstrates exceptional technical proficiency and strong communication skills. Performance across the resume, interview and assessments indicates strong potential for the ${role} role.`,
-    pros: [
-      'Top-tier algorithmic problem solving and clean coding conventions',
-      'Solid architectural articulation in system design interviews',
-      'High ATS keyword matching across modern cloud and AI frameworks'
-    ],
-    cons: [
-      'Minor room for expansion in enterprise MLOps CI/CD pipelines'
-    ],
-    cultureFitNotes: 'Collaborative, analytical, articulate communicator who thrives in fast-paced autonomous engineering environments.',
-    suggestedNextSteps: 'Proceed to final behavioral review / hiring committee sign-off.'
-  };
+  const recommendationLevel = avg >= 88 ? 'Strongly Recommended' : avg >= 78 ? 'Recommended' : avg >= 65 ? 'Conditional' : 'Not Recommended';
+  return { recommendationLevel, overallMatchPercentage: avg, executiveSummary: `${name}'s available resume, interview, coding, and communication signals were evaluated for the ${role} role.`, pros: ['Scores are calculated from completed candidate activity'], cons: ['Review the original resume and interview responses before making a decision'], cultureFitNotes: 'Requires a recruiter-led conversation for a reliable culture-fit assessment.', suggestedNextSteps: avg >= 78 ? 'Schedule a recruiter review.' : 'Review gaps and consider a follow-up assessment.' };
 }

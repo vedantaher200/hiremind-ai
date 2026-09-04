@@ -33,13 +33,20 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   const {
     candidates,
     applications,
-    updateApplicationStatus
+    updateApplicationStatus,
+    scheduleInterview
   } = useData();
 
   const [scheduleModal, setScheduleModal] = useState(false);
   const [offerModal, setOfferModal] = useState(false);
   const [rejectModal, setRejectModal] = useState(false);
   const [newNote, setNewNote] = useState('');
+  const [interviewDate, setInterviewDate] = useState('');
+  const [interviewTime, setInterviewTime] = useState('');
+  const [interviewType, setInterviewType] = useState<'HR Interview' | 'Technical Interview' | 'AI Assessment' | 'Final Interview'>('Technical Interview');
+  const [interviewMode, setInterviewMode] = useState<'Online' | 'Offline'>('Online');
+  const [meetingLink, setMeetingLink] = useState('');
+  const [isScheduling, setIsScheduling] = useState(false);
 
   const [notesList, setNotesList] = useState<string[]>([
     'Candidate assessment and recruiter observations will appear here.'
@@ -52,7 +59,6 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
    */
   const candidate =
     candidates.find((c) => c.id === candidateId) ||
-    candidates[0] ||
     null;
 
   const application = candidate
@@ -62,7 +68,6 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
       applications.find(
         (a) => a.candidateId === candidateId
       ) ||
-      applications[0] ||
       null
     : null;
 
@@ -109,13 +114,21 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   };
 
   const handleSchedule = async () => {
-    if (!application) return;
+    if (!application || !candidate || !interviewDate || !interviewTime) return;
 
     try {
-      await updateApplicationStatus(
-        application.id,
-        'Interviewed'
-      );
+      setIsScheduling(true);
+      await scheduleInterview({
+        applicationId: application.id,
+        candidateId: candidate.id,
+        jobId: application.jobId,
+        interviewDate,
+        interviewTime,
+        interviewType,
+        mode: interviewMode,
+        meetingLink: meetingLink.trim() || undefined,
+        status: 'Scheduled'
+      });
 
       setScheduleModal(false);
     } catch (error) {
@@ -123,6 +136,8 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
         'Unable to schedule interview:',
         error
       );
+    } finally {
+      setIsScheduling(false);
     }
   };
 
@@ -639,11 +654,18 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
               Interview Date & Time
             </label>
 
-            <input
-              type="datetime-local"
-              className="w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl"
-            />
+            <div className="grid grid-cols-2 gap-2">
+              <input type="date" value={interviewDate} onChange={event => setInterviewDate(event.target.value)} className="w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl" />
+              <input type="time" value={interviewTime} onChange={event => setInterviewTime(event.target.value)} className="w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl" />
+            </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <label className="font-bold text-[#464555]">Interview Type<select value={interviewType} onChange={event => setInterviewType(event.target.value as typeof interviewType)} className="mt-1 w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl font-normal"><option>HR Interview</option><option>Technical Interview</option><option>AI Assessment</option><option>Final Interview</option></select></label>
+            <label className="font-bold text-[#464555]">Mode<select value={interviewMode} onChange={event => setInterviewMode(event.target.value as typeof interviewMode)} className="mt-1 w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl font-normal"><option>Online</option><option>Offline</option></select></label>
+          </div>
+
+          {interviewMode === 'Online' && <div><label className="font-bold text-[#464555] block mb-1">Meeting Link</label><input type="url" value={meetingLink} onChange={event => setMeetingLink(event.target.value)} placeholder="https://meet.example.com/..." className="w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl" /></div>}
 
           <div>
             <label className="font-bold text-[#464555] block mb-1">
@@ -675,9 +697,10 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             <button
               type="button"
               onClick={handleSchedule}
-              className="px-5 py-2 bg-[#3525CD] text-white font-bold rounded-xl"
+              disabled={isScheduling || !interviewDate || !interviewTime}
+              className="px-5 py-2 bg-[#0F766E] text-white font-bold rounded-xl disabled:bg-[#94A3B8] disabled:cursor-not-allowed"
             >
-              Confirm & Send Invite
+              {isScheduling ? 'Scheduling...' : 'Confirm & Send Invite'}
             </button>
           </div>
         </div>

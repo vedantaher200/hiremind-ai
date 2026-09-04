@@ -7,6 +7,7 @@ import {
   AssessmentTest,
   TestAttempt,
   InterviewSession,
+  ScheduledInterview,
   UserProfile,
   NotificationItem
 } from '../types';
@@ -29,6 +30,7 @@ interface DataContextType {
   tests: AssessmentTest[];
   testAttempts: TestAttempt[];
   interviewSession: InterviewSession | null;
+  scheduledInterviews: ScheduledInterview[];
   rankingWeights: RankingWeights;
   notifications: NotificationItem[];
 
@@ -46,15 +48,17 @@ interface DataContextType {
     status: Application['status']
   ) => Promise<void>;
 
-  saveResumeAnalysis: (analysis: ResumeAnalysis) => void;
+  saveResumeAnalysis: (analysis: ResumeAnalysis) => Promise<void>;
 
   recordTestAttempt: (
     attempt: Omit<TestAttempt, 'id' | 'completedAt'>
-  ) => void;
+  ) => Promise<void>;
 
   updateInterviewResponse: (
     session: InterviewSession
-  ) => void;
+  ) => Promise<void>;
+
+  scheduleInterview: (input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>) => Promise<void>;
 
   setRankingWeights: React.Dispatch<
     React.SetStateAction<RankingWeights>
@@ -386,6 +390,10 @@ export const DataProvider: React.FC<{
       getStoredItem(STORAGE_KEYS.INTERVIEWS, null)
     );
 
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>(() =>
+    getStoredItem(STORAGE_KEYS.SCHEDULED_INTERVIEWS, [])
+  );
+
   /* =========================================================
      LOCAL STORAGE SYNC
   ========================================================= */
@@ -436,6 +444,10 @@ export const DataProvider: React.FC<{
       interviewSession
     );
   }, [interviewSession]);
+
+  useEffect(() => {
+    setStoredItem(STORAGE_KEYS.SCHEDULED_INTERVIEWS, scheduledInterviews);
+  }, [scheduledInterviews]);
 
   /* =========================================================
      LOAD DATA FROM SUPABASE
@@ -685,6 +697,33 @@ export const DataProvider: React.FC<{
             )
           );
         }
+
+        const [{ data: resumeRows }, { data: attemptRows }, { data: interviewRows }, { data: scheduledRows }] = await Promise.all([
+          supabase.from('resume_analyses').select('*').eq('candidate_id', user.id).order('created_at', { ascending: false }),
+          supabase.from('assessment_attempts').select('*').eq('candidate_id', user.id).order('completed_at', { ascending: false }),
+          supabase.from('interview_sessions').select('*').eq('candidate_id', user.id).order('updated_at', { ascending: false }).limit(1)
+          , supabase.from('interviews').select('*, jobs(title), profiles!interviews_candidate_id_fkey(full_name)').or(`candidate_id.eq.${user.id},recruiter_id.eq.${user.id}`).order('interview_date', { ascending: true })
+        ]);
+        if (resumeRows) setResumeAnalyses(resumeRows.map((row: any) => row.result as ResumeAnalysis));
+        if (attemptRows) setTestAttempts(attemptRows.map((row: any) => row.result as TestAttempt));
+        if (interviewRows?.[0]) setInterviewSession(interviewRows[0].session as InterviewSession);
+        if (scheduledRows) setScheduledInterviews(scheduledRows.map((row: any) => ({
+          id: row.id,
+          applicationId: row.application_id,
+          candidateId: row.candidate_id,
+          recruiterId: row.recruiter_id,
+          jobId: row.job_id,
+          jobTitle: row.jobs?.title || 'Job',
+          candidateName: row.profiles?.full_name || 'Candidate',
+          interviewDate: row.interview_date,
+          interviewTime: row.interview_time,
+          interviewType: row.interview_type,
+          mode: row.mode,
+          meetingLink: row.meeting_link || undefined,
+          notes: row.notes || undefined,
+          status: row.status,
+          createdAt: row.created_at
+        })));
       } catch (error) {
         console.error(
           'Error loading application data:',
@@ -1057,7 +1096,7 @@ export const DataProvider: React.FC<{
      SAVE RESUME ANALYSIS
   ========================================================= */
 
-  const saveResumeAnalysis = (
+  const saveResumeAnalysis = async (
     analysis: ResumeAnalysis
   ) => {
     setResumeAnalyses(prev => [
@@ -1066,6 +1105,11 @@ export const DataProvider: React.FC<{
         item => item.id !== analysis.id
       )
     ]);
+
+    if (supabase) {
+      const { error } = await supabase.from('resume_analyses').upsert({ id: analysis.id, candidate_id: analysis.candidateId, result: analysis, created_at: analysis.uploadedAt });
+      if (error) throw new Error(`Unable to save resume analysis: ${error.message}`);
+    }
 
     setApplications(prev =>
       prev.map(application => {
@@ -1107,7 +1151,7 @@ export const DataProvider: React.FC<{
      Automatically updates Coding / Aptitude Score
   ========================================================= */
 
-  const recordTestAttempt = (
+  const recordTestAttempt = async (
     attemptData: Omit<
       TestAttempt,
       'id' | 'completedAt'
@@ -1124,6 +1168,11 @@ export const DataProvider: React.FC<{
       attempt,
       ...prev
     ]);
+
+    if (supabase) {
+      const { error } = await supabase.from('assessment_attempts').upsert({ id: attempt.id, candidate_id: attempt.candidateId, test_id: attempt.testId, result: attempt, completed_at: attempt.completedAt });
+      if (error) throw new Error(`Unable to save assessment result: ${error.message}`);
+    }
 
     setApplications(prev =>
       prev.map(application => {
@@ -1192,10 +1241,15 @@ export const DataProvider: React.FC<{
      UPDATE INTERVIEW RESPONSE
   ========================================================= */
 
-  const updateInterviewResponse = (
+  const updateInterviewResponse = async (
     session: InterviewSession
   ) => {
     setInterviewSession(session);
+
+    if (supabase) {
+      const { error } = await supabase.from('interview_sessions').upsert({ id: session.id, candidate_id: session.candidateId, session, updated_at: new Date().toISOString() });
+      if (error) throw new Error(`Unable to save interview: ${error.message}`);
+    }
 
     if (
       session.status !== 'Completed' ||
@@ -1243,6 +1297,33 @@ export const DataProvider: React.FC<{
     );
   };
 
+  const scheduleInterview = async (input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>) => {
+    if (!user || user.role !== 'recruiter') throw new Error('Only recruiters can schedule interviews.');
+    const job = jobs.find(item => item.id === input.jobId);
+    const candidate = candidates.find(item => item.id === input.candidateId);
+    const createdAt = new Date().toISOString();
+    if (supabase) {
+      const { data, error } = await supabase.from('interviews').insert({
+        application_id: input.applicationId,
+        candidate_id: input.candidateId,
+        recruiter_id: user.id,
+        job_id: input.jobId,
+        interview_date: input.interviewDate,
+        interview_time: input.interviewTime,
+        interview_type: input.interviewType,
+        mode: input.mode,
+        meeting_link: input.meetingLink || null,
+        notes: input.notes || null,
+        status: input.status
+      }).select('id').single();
+      if (error || !data) throw new Error(error?.message || 'Unable to schedule interview.');
+      setScheduledInterviews(previous => [{ ...input, id: data.id, recruiterId: user.id, jobTitle: job?.title || 'Job', candidateName: candidate?.name || 'Candidate', createdAt }, ...previous]);
+    } else {
+      setScheduledInterviews(previous => [{ ...input, id: createClientId('interview'), recruiterId: user.id, jobTitle: job?.title || 'Job', candidateName: candidate?.name || 'Candidate', createdAt }, ...previous]);
+    }
+    await updateApplicationStatus(input.applicationId, 'Interviewed');
+  };
+
   /* =========================================================
      MARK NOTIFICATION AS READ
   ========================================================= */
@@ -1287,6 +1368,7 @@ export const DataProvider: React.FC<{
         tests: DEFAULT_TESTS,
         testAttempts,
         interviewSession,
+        scheduledInterviews,
         rankingWeights,
         notifications,
         addJob,
@@ -1295,6 +1377,7 @@ export const DataProvider: React.FC<{
         saveResumeAnalysis,
         recordTestAttempt,
         updateInterviewResponse,
+        scheduleInterview,
         setRankingWeights,
         calculateOverallScore,
         addNotification,

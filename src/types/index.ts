@@ -16,6 +16,7 @@ export interface UserProfile {
   linkedinUrl?: string;
   githubUrl?: string;
   portfolioUrl?: string;
+  organizationWebsite?: string;
 
   // Profile insights
   matchScore?: number;
@@ -273,6 +274,24 @@ export interface InterviewSession {
 
   riskFlags?: string[];
   aiConfidence?: number;
+}
+
+export interface ScheduledInterview {
+  id: string;
+  applicationId: string;
+  candidateId: string;
+  recruiterId: string;
+  jobId: string;
+  jobTitle: string;
+  candidateName: string;
+  interviewDate: string;
+  interviewTime: string;
+  interviewType: 'HR Interview' | 'Technical Interview' | 'AI Assessment' | 'Final Interview';
+  mode: 'Online' | 'Offline';
+  meetingLink?: string;
+  notes?: string;
+  status: 'Scheduled' | 'Completed' | 'Cancelled' | 'Rescheduled';
+  createdAt: string;
 }
 
 export interface TestQuestion {

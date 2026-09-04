@@ -27,7 +27,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onSuccess,
   onBackToLanding
 }) => {
-  const { login, signup, resetPassword } = useAuth();
+  const { login, signup, resetPassword, resendConfirmation } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
   const [role, setRole] = useState<UserRole>(initialRole);
   
@@ -37,6 +37,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [organizationWebsite, setOrganizationWebsite] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,16 +47,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     try {
       if (mode === 'login') {
-        await login(email, password);
+        await login(email, password, role);
       } else if (mode === 'register') {
         const result = await signup(name, email, password, role, organizationWebsite);
         if (result === 'confirmation_required') {
-          setMessage('Account created. Check your email to confirm your account, then sign in.');
-          setMode('login');
+          setConfirmationEmail(email.trim().toLowerCase());
+          setMessageType('success');
+          setMessage('Your account was created. Confirm your email to activate it.');
+          setLoading(false);
           return;
         }
       } else {
         await resetPassword(email);
+        setMessageType('success');
         setMessage('If an account exists, password reset instructions have been sent.');
         setLoading(false);
         return;
@@ -64,21 +69,43 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       onSuccess();
     } catch (err: any) {
       setLoading(false);
+      setMessageType('error');
       setMessage(err?.message || 'Authentication error occurred.');
     }
   };
 
   const handleRoleSelect = (newRole: UserRole) => {
+    if (newRole === role) return;
     setRole(newRole);
+    setEmail('');
+    setPassword('');
+    setMessage(null);
+    setConfirmationEmail(null);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!confirmationEmail) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      await resendConfirmation(confirmationEmail);
+      setMessageType('success');
+      setMessage(`A new confirmation email was sent to ${confirmationEmail}.`);
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : 'Unable to resend the confirmation email.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-10 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Back button */}
         <button
           onClick={onBackToLanding}
-          className="mb-6 inline-flex items-center gap-2 text-xs font-semibold text-[#464555] hover:text-[#3525CD] transition-colors"
+          className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-stone-600 hover:text-orange-700 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
@@ -86,28 +113,37 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
         {/* Brand Logo */}
         <div className="flex items-center justify-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-[#3525CD] to-[#712AE2] flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <div className="w-11 h-11 rounded-xl bg-orange-700 flex items-center justify-center shadow-sm">
             <Bot className="w-6 h-6 text-white" />
           </div>
           <span className="font-extrabold text-2xl text-[#191C1D] tracking-tight">
-            HireMind <span className="text-[#4F46E5] font-black text-sm px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-100">AI</span>
+            HireMind <span className="text-orange-700 font-bold text-sm">AI</span>
           </span>
         </div>
 
         <h2 className="mt-4 text-center text-2xl font-extrabold text-[#191C1D]">
-          {mode === 'login' && 'Sign in to HireMind AI'}
-          {mode === 'register' && 'Create your HireMind account'}
+          {mode === 'login' && 'Welcome back'}
+          {mode === 'register' && 'Create your account'}
           {mode === 'forgot' && 'Reset your password'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#737380]">
-          {mode === 'login' && 'Autonomous Multi-Modal Recruitment & Intelligence Platform'}
-          {mode === 'register' && 'Join the future of intelligent precision recruitment'}
+          {mode === 'login' && 'Sign in to continue to your recruitment workspace.'}
+          {mode === 'register' && 'Set up your candidate or recruiter workspace.'}
           {mode === 'forgot' && 'Enter your email to receive recovery instructions'}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 sm:px-10 rounded-3xl border border-[#E5E7EB] shadow-[0_20px_50px_-10px_rgba(79,70,229,0.08)]">
+        <div className="bg-white py-8 px-6 sm:px-10 rounded-2xl border border-slate-200 shadow-sm">
+          {confirmationEmail ? (
+            <div className="text-center space-y-5">
+              <div className="w-12 h-12 rounded-full bg-orange-50 text-orange-700 mx-auto flex items-center justify-center"><Mail className="w-6 h-6" /></div>
+              <div><h3 className="text-lg font-semibold text-slate-900">Confirm your email</h3><p className="mt-2 text-sm leading-6 text-slate-600">We sent a confirmation link to <strong>{confirmationEmail}</strong>. Open it to activate your account, then you’ll return here automatically.</p></div>
+              {message && <div className={`p-3 rounded-lg text-sm text-left ${messageType === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-orange-50 text-orange-800 border border-orange-100'}`}>{message}</div>}
+              <button type="button" onClick={() => void handleResendConfirmation()} disabled={loading} className="w-full py-2.5 rounded-lg bg-orange-700 hover:bg-orange-800 disabled:opacity-60 text-white text-sm font-semibold transition-colors">{loading ? 'Sending…' : 'Resend confirmation email'}</button>
+              <button type="button" onClick={() => { setConfirmationEmail(null); setMode('login'); setMessage(null); }} className="text-sm font-medium text-orange-700 hover:text-orange-800">Back to sign in</button>
+            </div>
+          ) : <>
           {/* Role selector buttons */}
           {mode !== 'forgot' && (
             <div className="mb-6">
@@ -147,7 +183,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           )}
 
           {message && (
-            <div className="mb-4 p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-medium text-[#3525CD] flex items-center gap-2">
+            <div className={`mb-4 p-3 rounded-lg border text-sm font-medium flex items-center gap-2 ${messageType === 'error' ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-orange-50 border-orange-100 text-orange-800'}`}>
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{message}</span>
             </div>
@@ -189,6 +225,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   type="email"
                   required
                   value={email}
+                  key={`email-${role}`}
+                  name={`${role}-email`}
+                  autoComplete="username"
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@company.com"
                   className="w-full pl-10 pr-4 py-2.5 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
@@ -216,6 +255,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <Lock className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="password"
+                    key={`password-${role}`}
+                    name={`${role}-password`}
+                    autoComplete="current-password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -229,7 +271,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 rounded-xl bg-gradient-to-r from-[#3525CD] to-[#712AE2] text-white text-sm font-bold shadow-[0_10px_20px_-5px_rgba(79,70,229,0.35)] hover:shadow-[0_15px_25px_-5px_rgba(79,70,229,0.45)] hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full mt-2 py-3 rounded-xl bg-[#0F766E] text-white text-sm font-bold shadow-sm hover:bg-[#115E59] active:bg-[#0B4F4A] disabled:bg-[#94A3B8] disabled:text-white disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E] transition-colors flex items-center justify-center gap-2 enabled:cursor-pointer"
               >
                 {loading ? (
                   <span>Authenticating...</span>
@@ -273,6 +315,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </p>
             )}
           </div>
+          </>}
         </div>
       </div>
     </div>

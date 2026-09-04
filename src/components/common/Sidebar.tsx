@@ -13,6 +13,7 @@ import {
   LogOut,
   Sparkles,
   Briefcase,
+  Search,
   Bot,
   UserCheck,
   type LucideIcon
@@ -53,6 +54,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Resume Intelligence',
       icon: FileText,
       badge: 'AI'
+    },
+    {
+      id: 'opportunities',
+      label: 'Find Opportunities',
+      icon: Search
     },
     {
       id: 'ai-interview',
@@ -184,14 +190,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               }
               className="flex items-center gap-2.5 cursor-pointer group text-left"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#3525CD] to-[#712AE2] flex items-center justify-center shadow-md shadow-indigo-500/20 group-hover:scale-105 transition-transform">
+              <div className="w-9 h-9 rounded-xl bg-[#0F766E] flex items-center justify-center shadow-sm shadow-teal-900/15 group-hover:scale-105 transition-transform">
                 <Bot className="w-5 h-5 text-white" />
               </div>
 
               <div>
                 <span className="font-extrabold text-lg text-[#191C1D] tracking-tight flex items-center gap-1">
                   HireMind
-                  <span className="text-[#4F46E5] font-black text-xs px-1.5 py-0.5 rounded-md bg-indigo-50 border border-indigo-100">
+                  <span className="text-[#0F766E] font-black text-xs px-1.5 py-0.5 rounded-md bg-[#E6F4F1] border border-[#B9DFD8]">
                     AI
                   </span>
                 </span>
@@ -249,7 +255,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
 
                   {item.badge && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold shadow-sm">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#0F766E] text-white font-semibold shadow-sm">
                       {item.badge}
                     </span>
                   )}

@@ -25,7 +25,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     indigo: 'bg-[#3525CD]',
     purple: 'bg-[#712AE2]',
     emerald: 'bg-emerald-600',
-    gradient: 'bg-gradient-to-r from-[#3525CD] to-[#712AE2]'
+    gradient: 'bg-[#0F766E]'
   };
 
   return (

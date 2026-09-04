@@ -42,7 +42,8 @@ export const CandidateDashboard: React.FC<
     applications,
     testAttempts,
     latestResume,
-    interviewSession
+    interviewSession,
+    scheduledInterviews
   } = useData();
 
   /* =========================================================
@@ -95,6 +96,10 @@ export const CandidateDashboard: React.FC<
     )
       ? myInterview
       : null;
+
+  const upcomingScheduledInterview = scheduledInterviews.find(interview =>
+    interview.candidateId === user?.id && interview.status === 'Scheduled'
+  );
 
   /* =========================================================
      TEST STATS
@@ -443,7 +448,7 @@ export const CandidateDashboard: React.FC<
             onClick={() =>
               onNavigate('ai-interview')
             }
-            className="px-4 py-2 bg-gradient-to-r from-[#3525CD] to-[#712AE2] text-white text-xs font-bold rounded-xl shadow-[0_10px_20px_-5px_rgba(79,70,229,0.3)] hover:shadow-[0_15px_25px_-5px_rgba(79,70,229,0.4)] transition-all flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl bg-[#0F766E] text-white text-xs font-bold shadow-sm hover:bg-[#115E59] active:bg-[#0B4F4A] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E] transition-colors flex items-center gap-1.5 cursor-pointer"
           >
             <Video className="w-3.5 h-3.5" />
 
@@ -479,12 +484,12 @@ export const CandidateDashboard: React.FC<
 
         <StatCard
           label="Interviews"
-          value={String(completedInterviews)}
+          value={String((upcomingScheduledInterview ? 1 : 0) + completedInterviews)}
           icon={Video}
           accentColor="purple"
           subtext={
-            upcomingInterview
-              ? '1 interview scheduled'
+            upcomingScheduledInterview || upcomingInterview
+              ? 'Interview scheduled'
               : 'No upcoming interview'
           }
           trend={{
@@ -497,7 +502,7 @@ export const CandidateDashboard: React.FC<
             isPositive:
               myInterview?.overallScore !== undefined
                 ? myInterview.overallScore >= 50
-                : Boolean(upcomingInterview)
+                : Boolean(upcomingScheduledInterview || upcomingInterview)
           }}
         />
 
@@ -549,6 +554,22 @@ export const CandidateDashboard: React.FC<
         ================================================= */}
 
         <div className="lg:col-span-8 space-y-6">
+          {upcomingScheduledInterview && (
+            <div className="rounded-2xl border border-[#B9DFD8] bg-[#E6F4F1] p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-[#0F766E]">Scheduled Interview</p>
+                  <h3 className="mt-1 text-base font-bold text-[#1D2927]">{upcomingScheduledInterview.jobTitle}</h3>
+                  <p className="mt-1 text-sm text-[#53635F]">{upcomingScheduledInterview.interviewType} · {upcomingScheduledInterview.mode}</p>
+                  <p className="mt-2 text-xs font-semibold text-[#1D2927]">
+                    {new Date(`${upcomingScheduledInterview.interviewDate}T${upcomingScheduledInterview.interviewTime}`).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                </div>
+                <span className="rounded-full border border-[#B9DFD8] bg-white px-2.5 py-1 text-xs font-bold text-[#0F766E]">{upcomingScheduledInterview.status}</span>
+              </div>
+              {upcomingScheduledInterview.meetingLink && <a href={upcomingScheduledInterview.meetingLink} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-bold text-[#0F766E] underline">Open meeting link</a>}
+            </div>
+          )}
           {/* ===============================================
               INTERVIEW CARD
           =============================================== */}

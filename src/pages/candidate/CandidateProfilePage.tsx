@@ -17,15 +17,20 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../../components/common/Modal';
+import { EducationItem, ExperienceItem } from '../../types';
+import { createClientId } from '../../lib/id';
 
 interface CandidateProfilePageProps {
   onNavigate?: (page: string) => void;
 }
 
 export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, uploadAvatar } = useAuth();
 
   const [showEditModal, setShowEditModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
 
   const [editName, setEditName] = useState('');
   const [editTitle, setEditTitle] = useState('');
@@ -35,6 +40,9 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
   const [editLinkedinUrl, setEditLinkedinUrl] = useState('');
   const [editGithubUrl, setEditGithubUrl] = useState('');
   const [editPortfolioUrl, setEditPortfolioUrl] = useState('');
+  const [editSkills, setEditSkills] = useState('');
+  const [editExperience, setEditExperience] = useState<ExperienceItem[]>([]);
+  const [editEducation, setEditEducation] = useState<EducationItem[]>([]);
 
   useEffect(() => {
     setEditName(user?.name || '');
@@ -45,10 +53,14 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
     setEditLinkedinUrl(user?.linkedinUrl || '');
     setEditGithubUrl(user?.githubUrl || '');
     setEditPortfolioUrl(user?.portfolioUrl || '');
+    setEditSkills(user?.skills.join(', ') || '');
+    setEditExperience(user?.experience || []);
+    setEditEducation(user?.education || []);
   }, [user]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
 
     try {
       await updateProfile({
@@ -59,7 +71,10 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
         phone: editPhone.trim(),
         linkedinUrl: editLinkedinUrl.trim(),
         githubUrl: editGithubUrl.trim(),
-        portfolioUrl: editPortfolioUrl.trim()
+        portfolioUrl: editPortfolioUrl.trim(),
+        skills: editSkills.split(',').map(skill => skill.trim()).filter(Boolean),
+        experience: editExperience.filter(item => item.company.trim() || item.role.trim()),
+        education: editEducation.filter(item => item.institution.trim() || item.degree.trim())
       });
 
       setShowEditModal(false);
@@ -69,6 +84,8 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
           ? error.message
           : 'Unable to update profile.'
       );
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -84,23 +101,12 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
       return;
     }
 
-    const reader = new FileReader();
-
-    reader.onloadend = async () => {
-      try {
-        await updateProfile({
-          avatar: reader.result as string
-        });
-      } catch (error) {
-        alert(
-          error instanceof Error
-            ? error.message
-            : 'Unable to update profile picture.'
-        );
-      }
-    };
-
-    reader.readAsDataURL(file);
+    setIsUploadingAvatar(true);
+    setAvatarMessage(null);
+    void uploadAvatar(file)
+      .then(() => setAvatarMessage('Profile picture updated.'))
+      .catch(error => setAvatarMessage(error instanceof Error ? error.message : 'Unable to update profile picture.'))
+      .finally(() => setIsUploadingAvatar(false));
   };
 
   const getInitials = () => {
@@ -161,7 +167,7 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
 
                 <label
                   htmlFor="candidate-avatar-upload"
-                  className="absolute -bottom-1 -right-1 w-10 h-10 bg-[#3525CD] text-white rounded-full flex items-center justify-center cursor-pointer border-2 border-white shadow-md hover:bg-[#281BA8] transition-colors"
+                  className={`absolute -bottom-1 -right-1 w-10 h-10 bg-[#3525CD] text-white rounded-full flex items-center justify-center border-2 border-white shadow-md transition-colors ${isUploadingAvatar ? 'opacity-60 cursor-not-allowed pointer-events-none' : 'cursor-pointer hover:bg-[#281BA8]'}`}
                   title="Change profile picture"
                 >
                   <Plus className="w-5 h-5" />
@@ -172,11 +178,14 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
                   type="file"
                   accept="image/*"
                   onChange={handleAvatarChange}
+                  disabled={isUploadingAvatar}
                   className="hidden"
                 />
 
                 <span className="absolute bottom-1 right-10 w-4 h-4 bg-emerald-500 rounded-full ring-2 ring-white" />
               </div>
+
+              {avatarMessage && <p className={`mt-2 text-xs font-semibold ${avatarMessage.includes('updated') ? 'text-emerald-700' : 'text-rose-700'}`}>{avatarMessage}</p>}
 
               <h2 className="text-xl font-extrabold text-[#191C1D] mt-5">
                 {user?.name || 'Candidate'}
@@ -404,6 +413,7 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
                   Your key professional and technical skills.
                 </p>
               </div>
+              <button type="button" onClick={() => setShowEditModal(true)} className="ml-auto text-xs font-bold text-[#0F766E] hover:text-[#115E59]">Edit</button>
             </div>
 
             {user?.skills && user.skills.length > 0 ? (
@@ -442,6 +452,7 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
                   Your professional work experience.
                 </p>
               </div>
+              <button type="button" onClick={() => setShowEditModal(true)} className="ml-auto text-xs font-bold text-[#0F766E] hover:text-[#115E59]">Edit</button>
             </div>
 
             {user?.experience && user.experience.length > 0 ? (
@@ -519,6 +530,7 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
                   Your academic qualifications.
                 </p>
               </div>
+              <button type="button" onClick={() => setShowEditModal(true)} className="ml-auto text-xs font-bold text-[#0F766E] hover:text-[#115E59]">Edit</button>
             </div>
 
             {user?.education && user.education.length > 0 ? (
@@ -729,6 +741,71 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
             />
           </div>
 
+          <div>
+            <label className="font-bold text-[#464555] block mb-1.5">Skills</label>
+            <input
+              type="text"
+              value={editSkills}
+              onChange={event => setEditSkills(event.target.value)}
+              placeholder="React, TypeScript, PostgreSQL"
+              className="w-full p-3 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-[#191C1D] outline-none focus:ring-2 focus:ring-[#3525CD]/20 focus:border-[#3525CD]"
+            />
+            <p className="mt-1 text-[10px] text-[#8E8EA0]">Separate skills with commas.</p>
+          </div>
+
+          <div className="border-t border-[#E5E7EB] pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <label className="font-bold text-[#464555]">Experience</label>
+              <button
+                type="button"
+                onClick={() => setEditExperience(items => [...items, { id: createClientId('exp'), company: '', role: '', duration: '', description: '' }])}
+                className="inline-flex items-center gap-1 text-xs font-bold text-[#0F766E] hover:text-[#115E59]"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add experience
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {editExperience.map((item, index) => (
+                <div key={item.id} className="rounded-xl border border-[#E5E7EB] bg-[#F8F9FA] p-3 space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input aria-label="Company" placeholder="Company" value={item.company} onChange={event => setEditExperience(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, company: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Role" placeholder="Role" value={item.role} onChange={event => setEditExperience(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, role: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Duration" placeholder="Duration" value={item.duration} onChange={event => setEditExperience(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, duration: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Work location" placeholder="Location (optional)" value={item.location || ''} onChange={event => setEditExperience(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, location: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                  </div>
+                  <textarea aria-label="Experience description" rows={2} placeholder="What did you work on?" value={item.description} onChange={event => setEditExperience(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, description: event.target.value } : current))} className="w-full p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D] resize-none" />
+                  <button type="button" onClick={() => setEditExperience(items => items.filter((_, itemIndex) => itemIndex !== index))} className="text-xs font-bold text-rose-700 hover:text-rose-800">Remove experience</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-[#E5E7EB] pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <label className="font-bold text-[#464555]">Education</label>
+              <button
+                type="button"
+                onClick={() => setEditEducation(items => [...items, { id: createClientId('edu'), institution: '', degree: '', field: '', year: '' }])}
+                className="inline-flex items-center gap-1 text-xs font-bold text-[#0F766E] hover:text-[#115E59]"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add education
+              </button>
+            </div>
+            <div className="mt-3 space-y-3">
+              {editEducation.map((item, index) => (
+                <div key={item.id} className="rounded-xl border border-[#E5E7EB] bg-[#F8F9FA] p-3 space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input aria-label="Institution" placeholder="Institution" value={item.institution} onChange={event => setEditEducation(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, institution: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Degree" placeholder="Degree" value={item.degree} onChange={event => setEditEducation(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, degree: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Field of study" placeholder="Field of study" value={item.field} onChange={event => setEditEducation(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, field: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                    <input aria-label="Graduation year" placeholder="Year" value={item.year} onChange={event => setEditEducation(items => items.map((current, itemIndex) => itemIndex === index ? { ...current, year: event.target.value } : current))} className="p-2.5 bg-white border border-[#E5E7EB] rounded-lg text-[#191C1D]" />
+                  </div>
+                  <button type="button" onClick={() => setEditEducation(items => items.filter((_, itemIndex) => itemIndex !== index))} className="text-xs font-bold text-rose-700 hover:text-rose-800">Remove education</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="flex justify-end gap-3 pt-3 border-t border-[#E5E7EB]">
             <button
               type="button"
@@ -740,10 +817,11 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
 
             <button
               type="submit"
-              className="px-5 py-2.5 bg-[#3525CD] text-white font-bold rounded-xl hover:bg-[#281BA8] transition-colors flex items-center gap-2"
+              disabled={isSaving}
+              className="px-5 py-2.5 bg-[#0F766E] text-white font-bold rounded-xl hover:bg-[#115E59] disabled:bg-[#94A3B8] disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              Save Changes
+              {isSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>

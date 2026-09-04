@@ -83,7 +83,7 @@ export const AIInterviewPage: React.FC<AIInterviewPageProps> = ({ onNavigate }) 
     }
   }, [currentAnswer]);
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     if (currentAnswer.trim().split(/\s+/).filter(Boolean).length < 10) return;
     const analysis = analyzeInterviewResponse(
       currentQuestion.question,
@@ -124,7 +124,12 @@ export const AIInterviewPage: React.FC<AIInterviewPageProps> = ({ onNavigate }) 
         summaryFeedback: 'Candidate showed exceptional command of AI latency trade-offs, structured engineering communication, and system design principles.'
       };
 
-      updateInterviewResponse(completedSession);
+      try {
+        await updateInterviewResponse(completedSession);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Unable to save the interview result.');
+        return;
+      }
       setIsCompleted(true);
       setFinalScoreModal(true);
 
@@ -142,7 +147,7 @@ export const AIInterviewPage: React.FC<AIInterviewPageProps> = ({ onNavigate }) 
 
   const handleEndInterviewEarly = () => {
     if (confirm('Are you sure you want to end this interview session? Your current answers will be evaluated.')) {
-      handleSubmitAnswer();
+      void handleSubmitAnswer();
     }
   };
 

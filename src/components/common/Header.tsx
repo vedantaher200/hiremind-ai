@@ -57,8 +57,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
       <div className="flex items-center gap-4">
 
         {/* AI Status */}
-        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-indigo-50 to-purple-50 text-[#712AE2] rounded-full text-xs font-medium border border-indigo-100/60">
-          <Sparkles className="w-3.5 h-3.5 text-[#712AE2] animate-pulse" />
+        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-[#E6F4F1] text-[#0F766E] rounded-full text-xs font-medium border border-[#B9DFD8]">
+          <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
           <span>HireMind Intelligence Active</span>
         </div>
 

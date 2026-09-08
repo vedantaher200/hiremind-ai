@@ -17,10 +17,12 @@ import {
   BarChart3
 } from 'lucide-react';
 
+import { UserRole } from '../types';
+
 interface LandingPageProps {
   onNavigate: (page: string) => void;
-  onLoginClick: (role?: 'candidate' | 'recruiter') => void;
-  onRegisterClick: (role?: 'candidate' | 'recruiter') => void;
+  onLoginClick: (role?: UserRole) => void;
+  onRegisterClick: (role?: UserRole) => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLoginClick, onRegisterClick }) => {
@@ -31,6 +33,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLoginCli
 
   const handleRecruiterStart = () => {
     onRegisterClick('recruiter');
+  };
+
+  const handleAdminStart = () => {
+    onLoginClick('admin');
   };
 
   return (
@@ -373,16 +379,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onLoginCli
           <div className="flex items-center gap-3">
             <button
               onClick={handleCandidateStart}
-              className="text-xs font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+              className="text-xs font-semibold text-orange-700 hover:text-orange-800 hover:underline cursor-pointer"
             >
               Candidate Portal
             </button>
             <span className="text-gray-300">|</span>
             <button
               onClick={handleRecruiterStart}
-              className="text-xs font-semibold text-orange-700 hover:text-orange-800 hover:underline"
+              className="text-xs font-semibold text-orange-700 hover:text-orange-800 hover:underline cursor-pointer"
             >
               Recruiter Dashboard
+            </button>
+            <span className="text-gray-300">|</span>
+            <button
+              onClick={handleAdminStart}
+              className="text-xs font-semibold text-stone-600 hover:text-orange-700 hover:underline cursor-pointer"
+            >
+              Admin Portal
             </button>
           </div>
         </div>

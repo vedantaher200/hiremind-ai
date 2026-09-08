@@ -17,7 +17,7 @@ interface AuthContextType {
     email: string,
     password: string,
     expectedRole?: UserRole
-  ) => Promise<void>;
+  ) => Promise<UserProfile>;
 
   signup: (
     name: string,
@@ -25,13 +25,14 @@ interface AuthContextType {
     password: string,
     role: UserRole,
     organizationWebsite?: string,
-    companyName?: string
-  ) => Promise<'signed_in' | 'confirmation_required' | 'pending_approval'>;
+    companyName?: string,
+    setupKey?: string
+  ) => Promise<{ status: 'signed_in' | 'pending_approval' | 'created'; user?: UserProfile }>;
 
   loginWithGoogle: (
     credential: string,
     role?: UserRole
-  ) => Promise<void>;
+  ) => Promise<UserProfile>;
 
   resetPassword: (email: string) => Promise<void>;
   resendConfirmation: (email: string) => Promise<void>;
@@ -43,8 +44,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const mapUserResponse = (data: any, fallbackRole?: UserRole): UserProfile => {
-  const rawRole = (data.role || fallbackRole || 'candidate').toLowerCase();
-  const role: UserRole = rawRole === 'admin' ? 'admin' : rawRole === 'recruiter' ? 'recruiter' : 'candidate';
+  const rawRole = (data.role || fallbackRole || '').toLowerCase();
+  if (rawRole !== 'admin' && rawRole !== 'recruiter' && rawRole !== 'candidate') {
+    throw new Error(`Invalid or missing user role: "${data.role}"`);
+  }
+  const role: UserRole = rawRole as UserRole;
 
   return {
     id: data.id,
@@ -105,17 +109,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     restoreSession();
   }, []);
 
-  const login = async (email: string, password: string, expectedRole?: UserRole) => {
-    setIsLoading(true);
+  const login = async (
+    email: string,
+    password: string,
+    expectedRole?: UserRole
+  ): Promise<UserProfile> => {
     try {
       const res = await api.auth.login(email, password, expectedRole);
       setToken(res.token);
       const mapped = mapUserResponse(res.user, expectedRole);
       setUser(mapped);
+      return mapped;
     } catch (err: any) {
+      clearToken();
+      setUser(null);
       throw err;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -125,44 +133,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     role: UserRole,
     organizationWebsite?: string,
-    companyName?: string
-  ): Promise<'signed_in' | 'confirmation_required' | 'pending_approval'> => {
-    setIsLoading(true);
+    companyName?: string,
+    setupKey?: string
+  ): Promise<{ status: 'signed_in' | 'pending_approval' | 'created'; user?: UserProfile }> => {
     try {
       if (role === 'recruiter') {
-        const res = await api.auth.registerRecruiter({
+        await api.auth.registerRecruiter({
           name,
           email,
           password,
           companyName: companyName || `${name}'s Company`,
           companyWebsite: organizationWebsite || 'https://example.com'
         });
-        return 'pending_approval';
+        return { status: 'pending_approval' };
+      } else if (role === 'admin') {
+        const res = await api.auth.registerAdmin({
+          name,
+          email,
+          password,
+          setupKey: setupKey || organizationWebsite
+        });
+        const mappedAdmin = res.user ? mapUserResponse(res.user, 'admin') : undefined;
+        return { status: 'created', user: mappedAdmin };
       } else {
         const res = await api.auth.registerCandidate({ name, email, password });
         setToken(res.token);
         const mapped = mapUserResponse(res.user, 'candidate');
         setUser(mapped);
-        return 'signed_in';
+        return { status: 'signed_in', user: mapped };
       }
     } catch (err: any) {
       throw err;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const loginWithGoogle = async (credential: string, role: UserRole = 'candidate') => {
-    setIsLoading(true);
+  const loginWithGoogle = async (credential: string, role: UserRole = 'candidate'): Promise<UserProfile> => {
     try {
       const res = await api.auth.google(credential, role.toUpperCase());
       setToken(res.token);
       const mapped = mapUserResponse(res.user, role);
       setUser(mapped);
+      return mapped;
     } catch (err: any) {
+      clearToken();
+      setUser(null);
       throw err;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -182,18 +197,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const uploadAvatar = async (file: File) => {
-    // In our file storage, we could upload via multipart
-    const fakeAvatarUrl = URL.createObjectURL(file);
-    await updateProfile({ avatar: fakeAvatarUrl });
+    try {
+      const res = await api.auth.uploadAvatar(file);
+      if (res?.avatar) {
+        setUser((prev) => (prev ? { ...prev, avatar: res.avatar } : null));
+      }
+    } catch (err: any) {
+      console.error('Failed to upload avatar:', err);
+      throw err;
+    }
   };
 
   const resetPassword = async (email: string) => {
-    // Standard endpoint simulation
-    await new Promise((r) => setTimeout(r, 600));
+    await api.auth.forgotPassword(email);
   };
 
   const resendConfirmation = async (email: string) => {
-    await new Promise((r) => setTimeout(r, 600));
+    await api.auth.resendVerification(email);
   };
 
   const role: UserRole = user?.role || 'candidate';

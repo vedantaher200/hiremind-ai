@@ -193,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
                 )}
 
                 {/* Recruiter Profile */}
-                {(role === 'recruiter' || role === 'admin') && onNavigate && (
+                {role === 'recruiter' && onNavigate && (
                   <button
                     onClick={() => {
                       setShowProfileMenu(false);
@@ -203,6 +203,20 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
                   >
                     <User className="w-3.5 h-3.5" />
                     My Recruiter Profile
+                  </button>
+                )}
+
+                {/* Admin Profile */}
+                {role === 'admin' && onNavigate && (
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      onNavigate('admin-profile');
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs text-[#464555] hover:bg-[#F8F9FA] hover:text-[#3525CD] flex items-center gap-2"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Admin Profile
                   </button>
                 )}
 
@@ -227,6 +241,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
                   onClick={() => {
                     setShowProfileMenu(false);
                     void logout();
+                    onNavigate?.('landing');
                   }}
                   className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
                 >

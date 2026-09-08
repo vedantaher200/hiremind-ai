@@ -154,24 +154,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShieldCheck
     },
     {
-      id: 'candidates-list',
+      id: 'admin-candidates',
       label: 'Candidates',
       icon: Users
     },
     {
-      id: 'jobs-management',
+      id: 'admin-jobs',
       label: 'Platform Jobs',
       icon: Briefcase
     },
     {
-      id: 'internships-management',
+      id: 'admin-internships',
       label: 'Platform Internships',
       icon: GraduationCap
     },
     {
-      id: 'analytics',
+      id: 'admin-analytics',
       label: 'Platform Analytics',
       icon: BarChart3
+    },
+    {
+      id: 'admin-profile',
+      label: 'Admin Profile',
+      icon: UserCheck
     }
   ];
 
@@ -188,9 +193,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleLogout = () => {
-    void logout().catch((error) => {
-      console.error('Logout failed:', error);
-    });
+    void logout()
+      .then(() => {
+        onNavigate('landing');
+      })
+      .catch((error) => {
+        console.error('Logout failed:', error);
+      });
   };
 
   return (
@@ -226,9 +235,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               type="button"
               onClick={() =>
                 handleNav(
-                  role === 'candidate'
-                    ? 'candidate-dashboard'
-                    : 'recruiter-dashboard'
+                  role === 'admin'
+                    ? 'admin-dashboard'
+                    : role === 'recruiter'
+                    ? 'recruiter-dashboard'
+                    : 'candidate-dashboard'
                 )
               }
               className="flex items-center gap-2.5 cursor-pointer group text-left"
@@ -256,9 +267,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <nav className="px-3 py-4 space-y-1">
             <div className="px-3 pb-2">
               <span className="text-[11px] font-semibold text-[#8E8EA0] uppercase tracking-wider">
-                {role === 'candidate'
-                  ? 'Candidate Portal'
-                  : 'Recruiter Workspace'}
+                {role === 'admin'
+                  ? 'Admin Console'
+                  : role === 'recruiter'
+                  ? 'Recruiter Workspace'
+                  : 'Candidate Portal'}
               </span>
             </div>
 

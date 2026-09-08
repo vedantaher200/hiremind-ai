@@ -72,6 +72,12 @@ export const api = {
         body: JSON.stringify(data)
       }),
 
+    registerAdmin: (data: { name: string; email: string; password: string; setupKey?: string }) =>
+      request<{ message: string; user: any }>('/auth/register-admin', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+
     login: (email: string, password: string, expectedRole?: string) =>
       request<{ message: string; token: string; user: any }>('/auth/login', {
         method: 'POST',
@@ -90,6 +96,27 @@ export const api = {
       request<{ message: string; user: any }>('/auth/profile', {
         method: 'PUT',
         body: JSON.stringify(updates)
+      }),
+
+    uploadAvatar: (file: File) => {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      return request<{ message: string; avatar: string; user: any }>('/auth/avatar', {
+        method: 'POST',
+        body: formData
+      });
+    },
+
+    forgotPassword: (email: string) =>
+      request<{ message: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email })
+      }),
+
+    resendVerification: (email: string) =>
+      request<{ message: string }>('/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email })
       })
   },
 
@@ -110,7 +137,42 @@ export const api = {
         body: JSON.stringify({ reason })
       }),
 
-    auditLogs: () => request<any[]>('/admin/audit-logs')
+    auditLogs: () => request<any[]>('/admin/audit-logs'),
+
+    candidates: (params?: { search?: string; status?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.search) query.set('search', params.search);
+      if (params?.status) query.set('status', params.status);
+      return request<any[]>(`/admin/candidates${query.toString() ? `?${query.toString()}` : ''}`);
+    },
+
+    jobs: (params?: { search?: string; status?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.search) query.set('search', params.search);
+      if (params?.status) query.set('status', params.status);
+      return request<any[]>(`/admin/jobs${query.toString() ? `?${query.toString()}` : ''}`);
+    },
+
+    updateJobStatus: (id: string, status: string) =>
+      request<{ message: string; job: any }>(`/admin/jobs/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      }),
+
+    internships: (params?: { search?: string; status?: string }) => {
+      const query = new URLSearchParams();
+      if (params?.search) query.set('search', params.search);
+      if (params?.status) query.set('status', params.status);
+      return request<any[]>(`/admin/internships${query.toString() ? `?${query.toString()}` : ''}`);
+    },
+
+    updateInternshipStatus: (id: string, status: string) =>
+      request<{ message: string; internship: any }>(`/admin/internships/${id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      }),
+
+    analytics: () => request<any>('/admin/analytics')
   },
 
   companies: {

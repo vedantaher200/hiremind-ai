@@ -31,3 +31,12 @@ The React app uses Supabase Auth and row-level protected tables for user data. `
 ### Supabase email confirmation
 
 In Supabase Dashboard → Authentication → URL Configuration, set **Site URL** to the deployed `VITE_APP_URL`, and add both `http://localhost:3000/?confirmed=1` and `https://your-app.vercel.app/?confirmed=1` to **Redirect URLs**. Enable Confirm email under Authentication → Providers → Email and configure SMTP if confirmation mail must reach real users. HireMind sends this redirect in both signup and resend requests; the user returns to the app with their verified session.
+
+## Admin Setup
+
+### Required Server Environment Variable: `ADMIN_SETUP_KEY`
+
+- **Where to configure:** Configure `ADMIN_SETUP_KEY` in the server environment (`server/.env` for local development, or your production server environment variables).
+- **Server-Side Only:** This variable is strictly server-side. Never expose it to the client bundle or prefix it with `VITE_`.
+- **Purpose:** Used only for controlled initial administrator account provisioning (`/api/auth/register-admin`). Once an administrator account is provisioned, the admin logs in using their standard email and password.
+- **Security Notice:** Never commit your actual production admin setup secret to GitHub or version control. Keep `.env` files git-ignored and only document variable placeholders in `.env.example`.

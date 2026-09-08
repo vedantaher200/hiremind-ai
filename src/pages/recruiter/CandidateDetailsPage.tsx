@@ -27,7 +27,7 @@ interface CandidateDetailsPageProps {
 }
 
 export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
-  candidateId = 'cand-rahul-01',
+  candidateId,
   onNavigate
 }) => {
   const {

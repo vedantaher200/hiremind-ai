@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Job,
+  Internship,
   Application,
   ResumeAnalysis,
   RankingWeights,
@@ -9,78 +10,13 @@ import {
   InterviewSession,
   ScheduledInterview,
   UserProfile,
-  NotificationItem
+  NotificationItem,
+  ApplicationStatus
 } from '../types';
 import { DEFAULT_WEIGHTS } from '../data/seedData';
-import {
-  STORAGE_KEYS,
-  getStoredItem,
-  setStoredItem,
-  supabase
-} from '../lib/supabase';
+import { api, getToken } from '../lib/api';
 import { useAuth } from './AuthContext';
 import { createClientId } from '../lib/id';
-
-interface DataContextType {
-  jobs: Job[];
-  applications: Application[];
-  candidates: UserProfile[];
-  resumeAnalyses: ResumeAnalysis[];
-  latestResume: ResumeAnalysis | null;
-  tests: AssessmentTest[];
-  testAttempts: TestAttempt[];
-  interviewSession: InterviewSession | null;
-  scheduledInterviews: ScheduledInterview[];
-  rankingWeights: RankingWeights;
-  notifications: NotificationItem[];
-
-  addJob: (
-    job: Omit<Job, 'id' | 'applicantCount' | 'createdAt'>
-  ) => Promise<void>;
-
-  applyForJob: (
-    jobId: string,
-    candidate: UserProfile
-  ) => Promise<void>;
-
-  updateApplicationStatus: (
-    appId: string,
-    status: Application['status']
-  ) => Promise<void>;
-
-  saveResumeAnalysis: (analysis: ResumeAnalysis) => Promise<void>;
-
-  recordTestAttempt: (
-    attempt: Omit<TestAttempt, 'id' | 'completedAt'>
-  ) => Promise<void>;
-
-  updateInterviewResponse: (
-    session: InterviewSession
-  ) => Promise<void>;
-
-  scheduleInterview: (input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>) => Promise<void>;
-
-  setRankingWeights: React.Dispatch<
-    React.SetStateAction<RankingWeights>
-  >;
-
-  calculateOverallScore: (
-    scores: Application['scores'],
-    weights?: RankingWeights
-  ) => number;
-
-  addNotification: (
-    title: string,
-    message: string,
-    type?: 'info' | 'success' | 'alert'
-  ) => void;
-
-  markNotificationAsRead: (id: string) => void;
-}
-
-const DataContext = createContext<DataContextType | undefined>(
-  undefined
-);
 
 /* =========================================================
    DEFAULT ASSESSMENT TESTS
@@ -101,8 +37,7 @@ const DEFAULT_TESTS: AssessmentTest[] = [
       {
         id: 'apt-1',
         type: 'mcq',
-        question:
-          'What comes next in the sequence: 2, 6, 12, 20, 30, ?',
+        question: 'What comes next in the sequence: 2, 6, 12, 20, 30, ?',
         options: ['36', '40', '42', '44'],
         correctOptionIndex: 2,
         points: 4
@@ -136,68 +71,46 @@ const DEFAULT_TESTS: AssessmentTest[] = [
       {
         id: 'apt-5',
         type: 'mcq',
-        question:
-          'If today is Monday, what day will it be after 100 days?',
+        question: 'If today is Monday, what day will it be after 100 days?',
         options: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'],
         correctOptionIndex: 1,
         points: 4
       }
     ]
   },
-
   {
     id: 'coding-test-001',
     title: 'JavaScript & TypeScript Coding Challenge',
     description:
-      'Demonstrate your programming, problem-solving, and algorithmic thinking skills.',
+      'Evaluate your algorithms, data structures, and core programming skills.',
     category: 'Coding Test',
     durationMinutes: 30,
-    totalQuestions: 3,
-    totalPoints: 30,
-    passingScore: 50,
+    totalQuestions: 2,
+    totalPoints: 50,
+    passingScore: 60,
     questions: [
       {
         id: 'code-1',
         type: 'coding',
         question:
-          'Write a function that returns the sum of all numbers in an array.',
-        points: 10,
-        starterCode: `function sumArray(numbers: number[]): number {
-  // Write your solution here
-
-}`,
-        sampleInput: '[1, 2, 3, 4]',
-        sampleOutput: '10'
+          'Write a function `twoSum(nums, target)` that returns indices of the two numbers such that they add up to target.',
+        starterCode: 'function twoSum(nums, target) {\n  // Your code here\n}',
+        sampleInput: 'nums = [2, 7, 11, 15], target = 9',
+        sampleOutput: '[0, 1]',
+        points: 25
       },
       {
         id: 'code-2',
         type: 'coding',
         question:
-          'Write a function that checks whether a string is a palindrome.',
-        points: 10,
-        starterCode: `function isPalindrome(text: string): boolean {
-  // Write your solution here
-
-}`,
-        sampleInput: '"madam"',
-        sampleOutput: 'true'
-      },
-      {
-        id: 'code-3',
-        type: 'coding',
-        question:
-          'Write a function that finds the largest number in an array.',
-        points: 10,
-        starterCode: `function findLargest(numbers: number[]): number {
-  // Write your solution here
-
-}`,
-        sampleInput: '[10, 25, 8, 42, 15]',
-        sampleOutput: '42'
+          'Write a function `isValid(s)` to determine if an input string with brackets `()[]{}` is valid.',
+        starterCode: 'function isValid(s) {\n  // Your code here\n}',
+        sampleInput: '"()[]{}"',
+        sampleOutput: 'true',
+        points: 25
       }
     ]
   },
-
   {
     id: 'technical-mcq-001',
     title: 'Full-Stack Technical Knowledge',
@@ -212,8 +125,7 @@ const DEFAULT_TESTS: AssessmentTest[] = [
       {
         id: 'tech-1',
         type: 'mcq',
-        question:
-          'Which React Hook is primarily used to manage component state?',
+        question: 'Which React Hook is primarily used to manage component state?',
         options: ['useEffect', 'useState', 'useContext', 'useRef'],
         correctOptionIndex: 1,
         points: 5
@@ -234,8 +146,7 @@ const DEFAULT_TESTS: AssessmentTest[] = [
       {
         id: 'tech-3',
         type: 'mcq',
-        question:
-          'Which HTTP status code means "Not Found"?',
+        question: 'Which HTTP status code means "Not Found"?',
         options: ['200', '201', '404', '500'],
         correctOptionIndex: 2,
         points: 5
@@ -243,8 +154,7 @@ const DEFAULT_TESTS: AssessmentTest[] = [
       {
         id: 'tech-4',
         type: 'mcq',
-        question:
-          'Which database is a relational database?',
+        question: 'Which database is a relational database?',
         options: ['MongoDB', 'Redis', 'PostgreSQL', 'Firebase'],
         correctOptionIndex: 2,
         points: 5
@@ -267,7 +177,7 @@ const DEFAULT_TESTS: AssessmentTest[] = [
 ];
 
 /* =========================================================
-   HELPER FUNCTIONS
+   HELPER MAPPERS
 ========================================================= */
 
 const createEmptyScores = () => ({
@@ -280,469 +190,345 @@ const createEmptyScores = () => ({
   overallScore: 0
 });
 
-const mapApplicationStage = (
-  stage: string | null | undefined
-): Application['status'] => {
-  switch (stage) {
-    case 'sourced':
-      return 'Sourced';
+const mapBackendAppToFrontend = (app: any, currentUser?: UserProfile | null): Application => {
+  const isJob = app.applicationType === 'JOB' || Boolean(app.jobId);
+  const title = app.job?.title || app.internship?.title || 'Position';
+  const cName = app.candidate?.name || (app.candidateId === currentUser?.id ? currentUser.name : 'Candidate');
+  const cEmail = app.candidate?.email || (app.candidateId === currentUser?.id ? currentUser.email : '');
+  const cAvatar = app.candidate?.avatar || (app.candidateId === currentUser?.id ? currentUser.avatar : undefined);
+  const cLoc = app.candidate?.location || (app.candidateId === currentUser?.id ? currentUser.location : undefined);
 
-    case 'screening':
-      return 'Screening';
-
-    case 'interview':
-      return 'Interviewed';
-
-    case 'technical':
-      return 'Technical';
-
-    case 'offer':
-      return 'Offer';
-
-    case 'rejected':
-      return 'Rejected';
-
-    case 'hired':
-      return 'Hired';
-
+  let status: ApplicationStatus = 'Applied';
+  switch (app.status) {
+    case 'APPLIED':
+      status = 'Applied';
+      break;
+    case 'UNDER_REVIEW':
+      status = 'Screening';
+      break;
+    case 'SHORTLISTED':
+      status = 'Technical';
+      break;
+    case 'INTERVIEW_SCHEDULED':
+    case 'INTERVIEW_COMPLETED':
+      status = 'Interviewed';
+      break;
+    case 'SELECTED':
+      status = 'Offer';
+      break;
+    case 'HIRED':
+      status = 'Hired';
+      break;
+    case 'REJECTED':
+      status = 'Rejected';
+      break;
     default:
-      return 'Applied';
+      status = 'Applied';
   }
+
+  const rawScores = typeof app.scores === 'string' ? JSON.parse(app.scores) : app.scores || {};
+
+  return {
+    id: app.id,
+    candidateId: app.candidateId,
+    candidateName: cName,
+    candidateEmail: cEmail,
+    candidateAvatar: cAvatar,
+    candidateLocation: cLoc,
+    jobId: app.jobId || app.internshipId || '',
+    jobTitle: title,
+    appliedDate: app.appliedAt || app.createdAt || new Date().toISOString(),
+    status,
+    scores: {
+      atsScore: Number(rawScores.atsScore) || 0,
+      interviewScore: Number(rawScores.interviewScore) || 0,
+      codingScore: Number(rawScores.codingScore) || 0,
+      aptitudeScore: Number(rawScores.aptitudeScore) || 0,
+      communicationScore: Number(rawScores.communicationScore) || 0,
+      behavioralScore: Number(rawScores.behavioralScore) || 0,
+      overallScore: Number(rawScores.overallScore) || 0
+    },
+    resumeUrl: app.resume?.storagePath ? `/uploads/resumes/${app.resume.storagePath}` : undefined,
+    notes: app.notes || undefined
+  };
 };
 
-const mapStatusToStage = (
-  status: Application['status']
-): string => {
+const mapFrontendStatusToBackend = (status: ApplicationStatus): string => {
   switch (status) {
+    case 'Applied':
     case 'Sourced':
-      return 'sourced';
-
+      return 'APPLIED';
     case 'Screening':
-      return 'screening';
-
-    case 'Interviewed':
-      return 'interview';
-
+      return 'UNDER_REVIEW';
     case 'Technical':
-      return 'technical';
-
+      return 'SHORTLISTED';
+    case 'Interviewed':
+      return 'INTERVIEW_SCHEDULED';
     case 'Offer':
-      return 'offer';
-
-    case 'Rejected':
-      return 'rejected';
-
+      return 'SELECTED';
     case 'Hired':
-      return 'hired';
-
+      return 'HIRED';
+    case 'Rejected':
+      return 'REJECTED';
     default:
-      return 'applied';
+      return 'APPLIED';
   }
 };
 
 /* =========================================================
-   DATA PROVIDER
+   DATA CONTEXT INTERFACE
 ========================================================= */
 
-export const DataProvider: React.FC<{
-  children: React.ReactNode;
-}> = ({ children }) => {
+export interface DataContextType {
+  jobs: Job[];
+  internships: Internship[];
+  applications: Application[];
+  candidates: UserProfile[];
+  resumeAnalyses: ResumeAnalysis[];
+  latestResume: ResumeAnalysis | null;
+  tests: AssessmentTest[];
+  testAttempts: TestAttempt[];
+  interviewSession: InterviewSession | null;
+  scheduledInterviews: ScheduledInterview[];
+  rankingWeights: RankingWeights;
+  notifications: NotificationItem[];
+
+  addJob: (job: Omit<Job, 'id' | 'applicantCount' | 'createdAt'>) => Promise<void>;
+  applyForJob: (jobId: string, candidate: UserProfile) => Promise<void>;
+  updateApplicationStatus: (appId: string, status: ApplicationStatus) => Promise<void>;
+  saveResumeAnalysis: (analysis: ResumeAnalysis) => Promise<void>;
+  recordTestAttempt: (attempt: Omit<TestAttempt, 'id' | 'completedAt'>) => Promise<void>;
+  updateInterviewResponse: (session: InterviewSession) => Promise<void>;
+  scheduleInterview: (
+    input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>
+  ) => Promise<void>;
+  setRankingWeights: React.Dispatch<React.SetStateAction<RankingWeights>>;
+  calculateOverallScore: (scores: Application['scores'], weights?: RankingWeights) => number;
+  addNotification: (title: string, message: string, type?: 'info' | 'success' | 'alert') => void;
+  markNotificationAsRead: (id: string) => void;
+  refreshData: () => Promise<void>;
+}
+
+const DataContext = createContext<DataContextType | undefined>(undefined);
+
+/* =========================================================
+   DATA PROVIDER IMPLEMENTATION
+========================================================= */
+
+export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  const [jobs, setJobs] = useState<Job[]>(() =>
-    getStoredItem(STORAGE_KEYS.JOBS, [])
-  );
-
-  const [candidates, setCandidates] = useState<UserProfile[]>(() =>
-    getStoredItem(STORAGE_KEYS.CANDIDATES, [])
-  );
-
-  const [applications, setApplications] = useState<Application[]>(() =>
-    getStoredItem(STORAGE_KEYS.APPLICATIONS, [])
-  );
-
-  const [resumeAnalyses, setResumeAnalyses] = useState<
-    ResumeAnalysis[]
-  >(() =>
-    getStoredItem(STORAGE_KEYS.RESUME_ANALYSES, [])
-  );
-
-  const [testAttempts, setTestAttempts] = useState<TestAttempt[]>(
-    () => getStoredItem(STORAGE_KEYS.TEST_ATTEMPTS, [])
-  );
-
-  const [rankingWeights, setRankingWeights] =
-    useState<RankingWeights>(() =>
-      getStoredItem(
-        STORAGE_KEYS.RANKING_WEIGHTS,
-        DEFAULT_WEIGHTS
-      )
-    );
-
-  const [notifications, setNotifications] = useState<
-    NotificationItem[]
-  >(() =>
-    getStoredItem(STORAGE_KEYS.NOTIFICATIONS, [])
-  );
-
-  const [interviewSession, setInterviewSession] =
-    useState<InterviewSession | null>(() =>
-      getStoredItem(STORAGE_KEYS.INTERVIEWS, null)
-    );
-
-  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>(() =>
-    getStoredItem(STORAGE_KEYS.SCHEDULED_INTERVIEWS, [])
-  );
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [internships, setInternships] = useState<Internship[]>([]);
+  const [candidates, setCandidates] = useState<UserProfile[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [resumeAnalyses, setResumeAnalyses] = useState<ResumeAnalysis[]>([]);
+  const [testAttempts, setTestAttempts] = useState<TestAttempt[]>([]);
+  const [rankingWeights, setRankingWeights] = useState<RankingWeights>(DEFAULT_WEIGHTS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [interviewSession, setInterviewSession] = useState<InterviewSession | null>(null);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterview[]>([]);
 
   /* =========================================================
-     LOCAL STORAGE SYNC
+     LOAD DATA FROM PERSISTENT API
   ========================================================= */
 
-  useEffect(() => {
-    setStoredItem(STORAGE_KEYS.JOBS, jobs);
-  }, [jobs]);
+  const refreshData = useCallback(async () => {
+    try {
+      // 1. Fetch public / active jobs
+      const fetchedJobs = await api.jobs.list().catch(() => []);
+      if (Array.isArray(fetchedJobs)) {
+        setJobs(
+          fetchedJobs.map((j: any) => ({
+            id: j.id,
+            title: j.title,
+            department: j.department || 'Engineering',
+            location: j.location || 'Remote',
+            type: j.employmentType || 'Full-time',
+            experienceLevel: j.experienceLevel || 'Mid',
+            description: j.description || '',
+            requirements: j.requirements || [],
+            requiredSkills: j.requiredSkills || [],
+            preferredSkills: j.preferredSkills || [],
+            salaryRange: j.salaryRange || undefined,
+            applicantCount: j.applicantCount || 0,
+            status: j.status === 'ACTIVE' ? 'Active' : j.status === 'CLOSED' ? 'Closed' : 'Draft',
+            createdAt: j.createdAt || new Date().toISOString()
+          }))
+        );
+      }
 
-  useEffect(() => {
-    setStoredItem(STORAGE_KEYS.CANDIDATES, candidates);
-  }, [candidates]);
+      // 2. Fetch active internships
+      const fetchedInternships = await api.internships.list().catch(() => []);
+      if (Array.isArray(fetchedInternships)) {
+        setInternships(fetchedInternships);
+      }
 
-  useEffect(() => {
-    setStoredItem(STORAGE_KEYS.APPLICATIONS, applications);
-  }, [applications]);
+      if (!user || !getToken()) return;
 
-  useEffect(() => {
-    setStoredItem(
-      STORAGE_KEYS.RESUME_ANALYSES,
-      resumeAnalyses
-    );
-  }, [resumeAnalyses]);
+      // 3. User-specific notifications
+      const notifs = await api.notifications.list().catch(() => []);
+      if (Array.isArray(notifs)) {
+        setNotifications(
+          notifs.map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            message: n.message,
+            timestamp: n.createdAt ? new Date(n.createdAt).toLocaleString() : 'Just now',
+            read: Boolean(n.isRead),
+            type: n.type === 'success' ? 'success' : n.type === 'alert' ? 'alert' : 'info'
+          }))
+        );
+      }
 
-  useEffect(() => {
-    setStoredItem(
-      STORAGE_KEYS.TEST_ATTEMPTS,
-      testAttempts
-    );
-  }, [testAttempts]);
+      // 4. User-specific interviews
+      const interviews = await api.interviews.list().catch(() => []);
+      if (Array.isArray(interviews)) {
+        setScheduledInterviews(
+          interviews.map((item: any) => ({
+            id: item.id,
+            applicationId: item.applicationId || '',
+            candidateId: item.candidateId,
+            recruiterId: item.recruiterId,
+            jobId: item.jobId || item.internshipId || '',
+            jobTitle: item.job?.title || item.internship?.title || 'Position',
+            candidateName: item.candidate?.name || 'Candidate',
+            interviewDate: item.date,
+            interviewTime: item.time,
+            interviewType: (item.interviewType as any) || 'Technical Interview',
+            mode: item.mode?.toLowerCase().includes('in-person') ? 'Offline' : 'Online',
+            meetingLink: item.meetingLink || undefined,
+            notes: item.notes || undefined,
+            status: (item.status as any) || 'Scheduled',
+            createdAt: item.createdAt || new Date().toISOString()
+          }))
+        );
+      }
 
-  useEffect(() => {
-    setStoredItem(
-      STORAGE_KEYS.RANKING_WEIGHTS,
-      rankingWeights
-    );
-  }, [rankingWeights]);
+      // 5. Role-specific data
+      if (user.role === 'recruiter') {
+        // Recruiter's applicants across all their jobs/internships
+        const applicantsData = await api.applications.recruiterApplicants().catch(() => []);
+        if (Array.isArray(applicantsData)) {
+          const mappedApps = applicantsData.map((app: any) => mapBackendAppToFrontend(app, user));
+          setApplications(mappedApps);
 
-  useEffect(() => {
-    setStoredItem(
-      STORAGE_KEYS.NOTIFICATIONS,
-      notifications
-    );
-  }, [notifications]);
-
-  useEffect(() => {
-    setStoredItem(
-      STORAGE_KEYS.INTERVIEWS,
-      interviewSession
-    );
-  }, [interviewSession]);
-
-  useEffect(() => {
-    setStoredItem(STORAGE_KEYS.SCHEDULED_INTERVIEWS, scheduledInterviews);
-  }, [scheduledInterviews]);
-
-  /* =========================================================
-     LOAD DATA FROM SUPABASE
-  ========================================================= */
-
-  useEffect(() => {
-    if (!supabase || !user) return;
-
-    const load = async () => {
-      try {
-        /* ---------------- JOBS ---------------- */
-
-        const {
-          data: jobRows,
-          error: jobsError
-        } = await supabase
-          .from('jobs')
-          .select('*')
-          .order('created_at', {
-            ascending: false
+          // Build unique candidates list from applicants
+          const candidateMap = new Map<string, UserProfile>();
+          applicantsData.forEach((app: any) => {
+            if (app.candidate && !candidateMap.has(app.candidate.id)) {
+              candidateMap.set(app.candidate.id, {
+                id: app.candidate.id,
+                name: app.candidate.name,
+                email: app.candidate.email,
+                role: 'candidate',
+                avatar: app.candidate.avatar || undefined,
+                phone: app.candidate.phone || undefined,
+                location: app.candidate.location || undefined,
+                title: app.candidate.title || undefined,
+                skills: app.candidate.skills || [],
+                experience: app.candidate.experience || [],
+                education: app.candidate.education || [],
+                matchScore: app.candidate.matchScore || undefined,
+                createdAt: app.appliedAt || new Date().toISOString()
+              });
+            }
           });
+          setCandidates(Array.from(candidateMap.values()));
+        }
 
-        if (!jobsError && jobRows) {
-          const {
-            data: applicationCountRows
-          } = await supabase
-            .from('applications')
-            .select('job_id');
+        // Recruiter's own jobs (to include drafts or closed)
+        const myJobsData = await api.jobs.myJobs().catch(() => []);
+        if (Array.isArray(myJobsData) && myJobsData.length > 0) {
+          const mappedMyJobs = myJobsData.map((j: any) => ({
+            id: j.id,
+            title: j.title,
+            department: j.department || 'Engineering',
+            location: j.location || 'Remote',
+            type: j.employmentType || 'Full-time',
+            experienceLevel: j.experienceLevel || 'Mid',
+            description: j.description || '',
+            requirements: j.requirements || [],
+            requiredSkills: j.requiredSkills || [],
+            preferredSkills: j.preferredSkills || [],
+            salaryRange: j.salaryRange || undefined,
+            applicantCount: j.applicantCount || 0,
+            status: j.status === 'ACTIVE' ? 'Active' : j.status === 'CLOSED' ? 'Closed' : 'Draft',
+            createdAt: j.createdAt || new Date().toISOString()
+          }));
+          setJobs(prev => {
+            const map = new Map(prev.map(j => [j.id, j]));
+            mappedMyJobs.forEach(j => map.set(j.id, j));
+            return Array.from(map.values());
+          });
+        }
+      } else if (user.role === 'candidate') {
+        // Candidate's own applications
+        const myApps = await api.applications.myApplications().catch(() => []);
+        if (Array.isArray(myApps)) {
+          setApplications(myApps.map((app: any) => mapBackendAppToFrontend(app, user)));
+        }
 
-          const applicationCounts =
-            applicationCountRows?.reduce(
-              (
-                counts: Record<string, number>,
-                row: any
-              ) => {
-                counts[row.job_id] =
-                  (counts[row.job_id] || 0) + 1;
+        // Candidate's latest resume and analysis
+        const resumeRes = await api.resumes.latest().catch(() => ({ resume: null, analysis: null }));
+        if (resumeRes?.analysis) {
+          const a = resumeRes.analysis;
+          const formattedAnalysis: ResumeAnalysis = {
+            id: a.id,
+            candidateId: a.candidateId,
+            fileName: resumeRes.resume?.fileName || 'Resume.pdf',
+            uploadedAt: a.createdAt || new Date().toISOString(),
+            fileSize: `${((resumeRes.resume?.fileSize || 50000) / 1024).toFixed(1)} KB`,
+            atsCompatibilityScore: Math.round(a.atsScore || 75),
+            extractedSkills: a.extractedSkills || [],
+            strengths: a.strengths || [],
+            missingSkills: a.missingSkills || [],
+            experienceSummary: a.experienceSummary || '',
+            educationSummary: a.educationSummary || '',
+            improvementSuggestions: a.improvementSuggestions || [],
+            targetRole: 'Software Developer',
+            source: 'ai'
+          };
+          setResumeAnalyses([formattedAnalysis]);
+        }
 
-                return counts;
-              },
-              {}
-            ) || {};
-
-          setJobs(
-            jobRows.map((row: any) => ({
-              id: row.id,
-              title: row.title,
-              department:
-                row.department || 'General',
-              location:
-                row.location || 'Not specified',
-              type:
-                row.employment_type || 'Full-time',
-              experienceLevel:
-                row.experience_level || 'Entry',
-              description: row.description || '',
-              requirements:
-                row.requirements || [],
-              requiredSkills:
-                row.required_skills || [],
-              salaryRange:
-                row.salary_range || undefined,
-              applicantCount:
-                applicationCounts[row.id] || 0,
-              status:
-                row.status === 'published'
-                  ? 'Active'
-                  : row.status === 'closed'
-                  ? 'Closed'
-                  : 'Draft',
-              createdAt:
-                row.created_at ||
-                new Date().toISOString()
+        // Candidate's test attempts
+        const attempts = await api.assessments.myAttempts().catch(() => []);
+        if (Array.isArray(attempts)) {
+          setTestAttempts(
+            attempts.map((att: any) => ({
+              id: att.id,
+              testId: att.testId,
+              testTitle: att.test?.title || 'Skill Assessment',
+              category: att.test?.category || 'General',
+              candidateId: att.candidateId,
+              completedAt: att.completedAt || new Date().toISOString(),
+              score: att.score,
+              totalPoints: att.maxScore,
+              percentage: att.percentage,
+              status: att.passed ? 'Passed' : 'Failed',
+              timeSpentMinutes: Math.round((att.timeSpentSeconds || 0) / 60),
+              answers: {}
             }))
           );
         }
 
-        /* ---------------- CANDIDATES ---------------- */
-
-        const {
-          data: profileRows,
-          error: profilesError
-        } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', {
-            ascending: false
-          });
-
-        if (!profilesError && profileRows) {
-          const loadedCandidates: UserProfile[] =
-            profileRows
-              .filter(
-                (row: any) =>
-                  row.role === 'candidate'
-              )
-              .map((row: any) => ({
-                id: row.id,
-                name:
-                  row.name ||
-                  row.full_name ||
-                  'Candidate',
-                email: row.email || '',
-                role: 'candidate',
-                avatar:
-                  row.avatar_url || undefined,
-                phone:
-                  row.phone || undefined,
-                location:
-                  row.location || undefined,
-                title:
-                  row.title || undefined,
-                bio: row.bio || undefined,
-                matchScore:
-                  row.match_score || undefined,
-                skills: row.skills || [],
-                experience:
-                  row.experience || [],
-                education:
-                  row.education || [],
-                createdAt:
-                  row.created_at ||
-                  new Date().toISOString()
-              }));
-
-          setCandidates(loadedCandidates);
-        }
-
-        /* ---------------- APPLICATIONS ---------------- */
-
-        const {
-          data: appRows,
-          error: appsError
-        } = await supabase
-          .from('applications')
-          .select('*, jobs(title)')
-          .order('applied_at', {
-            ascending: false
-          });
-
-        if (!appsError && appRows) {
-          const loadedApplications: Application[] =
-            appRows.map((row: any) => {
-              const candidate =
-                candidates.find(
-                  c => c.id === row.candidate_id
-                );
-
-              return {
-                id: row.id,
-                candidateId: row.candidate_id,
-                candidateName:
-                  row.candidate_name ||
-                  candidate?.name ||
-                  (row.candidate_id === user.id
-                    ? user.name
-                    : 'Candidate'),
-                candidateEmail:
-                  row.candidate_email ||
-                  candidate?.email ||
-                  (row.candidate_id === user.id
-                    ? user.email
-                    : ''),
-                candidateAvatar:
-                  candidate?.avatar,
-                candidateLocation:
-                  candidate?.location,
-                jobId: row.job_id,
-                jobTitle:
-                  row.jobs?.title || 'Job',
-                appliedDate:
-                  row.applied_at ||
-                  new Date().toISOString(),
-                status:
-                  mapApplicationStage(row.stage),
-                scores: {
-                  atsScore:
-                    Number(row.ats_score) || 0,
-                  interviewScore:
-                    Number(
-                      row.interview_score
-                    ) || 0,
-                  codingScore:
-                    Number(
-                      row.coding_score
-                    ) || 0,
-                  aptitudeScore:
-                    Number(
-                      row.aptitude_score
-                    ) || 0,
-                  communicationScore:
-                    Number(
-                      row.communication_score
-                    ) || 0,
-                  behavioralScore:
-                    Number(
-                      row.behavioral_score
-                    ) || 0,
-                  overallScore:
-                    Number(
-                      row.overall_score
-                    ) || 0
-                },
-                resumeUrl:
-                  row.resume_url || undefined,
-                notes:
-                  row.notes || undefined
-              };
-            });
-
-          setApplications(loadedApplications);
-        }
-
-        /* ---------------- NOTIFICATIONS ---------------- */
-
-        const {
-          data: notificationRows
-        } = await supabase
-          .from('notifications')
-          .select('*')
-          .order('created_at', {
-            ascending: false
-          })
-          .limit(20);
-
-        if (notificationRows) {
-          setNotifications(
-            notificationRows.map(
-              (row: any) => ({
-                id: row.id,
-                title: row.title,
-                message: row.message,
-                timestamp:
-                  row.created_at
-                    ? new Date(
-                        row.created_at
-                      ).toLocaleString()
-                    : 'Just now',
-                read: Boolean(row.read_at),
-                type:
-                  row.type === 'success'
-                    ? 'success'
-                    : row.type === 'alert'
-                    ? 'alert'
-                    : 'info'
-              })
-            )
-          );
-        }
-
-        const [{ data: resumeRows }, { data: attemptRows }, { data: interviewRows }, { data: scheduledRows }] = await Promise.all([
-          supabase.from('resume_analyses').select('*').eq('candidate_id', user.id).order('created_at', { ascending: false }),
-          supabase.from('assessment_attempts').select('*').eq('candidate_id', user.id).order('completed_at', { ascending: false }),
-          supabase.from('interview_sessions').select('*').eq('candidate_id', user.id).order('updated_at', { ascending: false }).limit(1)
-          , supabase.from('interviews').select('*, jobs(title), profiles!interviews_candidate_id_fkey(full_name)').or(`candidate_id.eq.${user.id},recruiter_id.eq.${user.id}`).order('interview_date', { ascending: true })
-        ]);
-        if (resumeRows) setResumeAnalyses(resumeRows.map((row: any) => row.result as ResumeAnalysis));
-        if (attemptRows) setTestAttempts(attemptRows.map((row: any) => row.result as TestAttempt));
-        if (interviewRows?.[0]) setInterviewSession(interviewRows[0].session as InterviewSession);
-        if (scheduledRows) setScheduledInterviews(scheduledRows.map((row: any) => ({
-          id: row.id,
-          applicationId: row.application_id,
-          candidateId: row.candidate_id,
-          recruiterId: row.recruiter_id,
-          jobId: row.job_id,
-          jobTitle: row.jobs?.title || 'Job',
-          candidateName: row.profiles?.full_name || 'Candidate',
-          interviewDate: row.interview_date,
-          interviewTime: row.interview_time,
-          interviewType: row.interview_type,
-          mode: row.mode,
-          meetingLink: row.meeting_link || undefined,
-          notes: row.notes || undefined,
-          status: row.status,
-          createdAt: row.created_at
-        })));
-      } catch (error) {
-        console.error(
-          'Error loading application data:',
-          error
-        );
+        setCandidates([user]);
       }
-    };
+    } catch (err) {
+      console.warn('Data sync warning:', err);
+    }
+  }, [user]);
 
-    void load();
-  }, [user?.id]);
+  useEffect(() => {
+    void refreshData();
+  }, [refreshData]);
 
   /* =========================================================
      LATEST RESUME
   ========================================================= */
 
-  const latestResume =
-    resumeAnalyses.length > 0
-      ? resumeAnalyses[0]
-      : null;
+  const latestResume = resumeAnalyses.length > 0 ? resumeAnalyses[0] : null;
 
   /* =========================================================
      SCORE CALCULATION
@@ -763,22 +549,12 @@ export const DataProvider: React.FC<{
 
     const weightedSum =
       scores.atsScore * weights.atsWeight +
-      scores.interviewScore *
-        weights.interviewWeight +
-      scores.codingScore *
-        weights.codingWeight +
-      scores.communicationScore *
-        weights.communicationWeight +
-      scores.behavioralScore *
-        weights.behavioralWeight;
+      scores.interviewScore * weights.interviewWeight +
+      scores.codingScore * weights.codingWeight +
+      scores.communicationScore * weights.communicationWeight +
+      scores.behavioralScore * weights.behavioralWeight;
 
-    return Math.min(
-      100,
-      Math.max(
-        0,
-        Math.round(weightedSum / totalWeight)
-      )
-    );
+    return Math.min(100, Math.max(0, Math.round(weightedSum / totalWeight)));
   };
 
   /* =========================================================
@@ -799,253 +575,75 @@ export const DataProvider: React.FC<{
       type
     };
 
-    setNotifications(prev =>
-      [newNotif, ...prev].slice(0, 20)
-    );
+    setNotifications(prev => [newNotif, ...prev].slice(0, 30));
+  };
 
-    if (supabase && user) {
-      void supabase
-        .from('notifications')
-        .insert({
-          id: newNotif.id,
-          user_id: user.id,
-          title,
-          message,
-          type
-        });
-    }
+  const markNotificationAsRead = (id: string) => {
+    setNotifications(prev =>
+      prev.map(notification =>
+        notification.id === id ? { ...notification, read: true } : notification
+      )
+    );
+    api.notifications.markAsRead(id).catch(() => {});
   };
 
   /* =========================================================
-     ADD JOB
+     ADD JOB (POST to API)
   ========================================================= */
 
-  const addJob = async (
-    newJobData: Omit<
-      Job,
-      'id' | 'applicantCount' | 'createdAt'
-    >
-  ) => {
-    if (!user) {
-      throw new Error(
-        'Sign in to create a job.'
-      );
-    }
+  const addJob = async (newJobData: Omit<Job, 'id' | 'applicantCount' | 'createdAt'>) => {
+    if (!user) throw new Error('Please sign in to create a job posting.');
 
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('jobs')
-        .insert({
-          recruiter_id: user.id,
-          title: newJobData.title,
-          department: newJobData.department,
-          description: newJobData.description,
-          requirements:
-            newJobData.requirements || [],
-          required_skills:
-            newJobData.requiredSkills || [],
-          location: newJobData.location,
-          employment_type:
-            newJobData.type,
-          experience_level:
-            newJobData.experienceLevel,
-          salary_range:
-            newJobData.salaryRange || null,
-          status:
-            newJobData.status === 'Active'
-              ? 'published'
-              : newJobData.status === 'Closed'
-              ? 'closed'
-              : 'draft'
-        })
-        .select()
-        .single();
+    const res = await api.jobs.create({
+      title: newJobData.title,
+      department: newJobData.department,
+      location: newJobData.location,
+      employmentType: newJobData.type,
+      experienceLevel: newJobData.experienceLevel,
+      description: newJobData.description,
+      requirements: newJobData.requirements || [],
+      requiredSkills: newJobData.requiredSkills || [],
+      preferredSkills: newJobData.preferredSkills || [],
+      salaryRange: newJobData.salaryRange
+    });
 
-      if (error || !data) {
-        throw new Error(
-          error?.message ||
-            'Unable to create job.'
-        );
-      }
-
-      const createdJob: Job = {
-        ...newJobData,
-        id: data.id,
-        applicantCount: 0,
-        createdAt: data.created_at
-      };
-
-      setJobs(prev => [
-        createdJob,
-        ...prev
-      ]);
-
-      addNotification(
-        'New Job Posted',
-        `Role "${createdJob.title}" has been created successfully.`,
-        'success'
-      );
-
-      return;
-    }
-
-    /* LOCAL FALLBACK */
-
-    const job: Job = {
+    const created = res.job;
+    const formatted: Job = {
       ...newJobData,
-      id: createClientId('job'),
+      id: created.id,
       applicantCount: 0,
-      createdAt:
-        new Date().toISOString()
+      status: 'Active',
+      createdAt: created.createdAt || new Date().toISOString()
     };
 
-    setJobs(prev => [
-      job,
-      ...prev
-    ]);
-
-    addNotification(
-      'New Job Posted',
-      `Role "${job.title}" has been published to candidates.`,
-      'success'
-    );
+    setJobs(prev => [formatted, ...prev]);
+    addNotification('New Job Posted', `Role "${formatted.title}" has been published.`, 'success');
   };
 
   /* =========================================================
      APPLY FOR JOB
   ========================================================= */
 
-  const applyForJob = async (
-    jobId: string,
-    candidate: UserProfile
-  ) => {
-    const targetJob = jobs.find(
-      job => job.id === jobId
+  const applyForJob = async (jobId: string, candidate: UserProfile) => {
+    const targetJob = jobs.find(job => job.id === jobId);
+    if (!targetJob) throw new Error('Selected job was not found.');
+
+    const alreadyApplied = applications.some(
+      app => app.jobId === jobId && app.candidateId === candidate.id
     );
+    if (alreadyApplied) throw new Error('You have already applied for this job.');
 
-    if (!targetJob) {
-      throw new Error(
-        'Selected job was not found.'
-      );
-    }
+    const res = await api.applications.apply({ jobId });
 
-    const alreadyApplied =
-      applications.some(
-        application =>
-          application.jobId === jobId &&
-          application.candidateId ===
-            candidate.id
-      );
-
-    if (alreadyApplied) {
-      throw new Error(
-        'You have already applied for this job.'
-      );
-    }
-
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('applications')
-        .insert({
-          candidate_id: candidate.id,
-          job_id: jobId,
-          stage: 'applied'
-        })
-        .select('*, jobs(title)')
-        .single();
-
-      if (error || !data) {
-        throw new Error(
-          error?.code === '23505'
-            ? 'You have already applied for this job.'
-            : error?.message ||
-              'Unable to submit application.'
-        );
-      }
-
-      const newApplication: Application = {
-        id: data.id,
-        candidateId: candidate.id,
-        candidateName: candidate.name,
-        candidateEmail: candidate.email,
-        candidateAvatar: candidate.avatar,
-        candidateLocation:
-          candidate.location,
-        jobId,
-        jobTitle:
-          data.jobs?.title ||
-          targetJob.title,
-        appliedDate:
-          data.applied_at ||
-          new Date().toISOString(),
-        status: 'Applied',
-        scores: createEmptyScores()
-      };
-
-      setApplications(prev => [
-        newApplication,
-        ...prev
-      ]);
-
-      setJobs(prev =>
-        prev.map(job =>
-          job.id === jobId
-            ? {
-                ...job,
-                applicantCount:
-                  job.applicantCount + 1
-              }
-            : job
-        )
-      );
-
-      addNotification(
-        'Application Submitted',
-        `You successfully applied for ${targetJob.title}.`,
-        'success'
-      );
-
-      return;
-    }
-
-    /* LOCAL FALLBACK */
-
-    const newApp: Application = {
-      id: createClientId('app'),
-      candidateId: candidate.id,
-      candidateName: candidate.name,
-      candidateEmail: candidate.email,
-      candidateAvatar: candidate.avatar,
-      candidateLocation:
-        candidate.location,
-      jobId: targetJob.id,
-      jobTitle: targetJob.title,
-      appliedDate:
-        new Date().toISOString(),
-      status: 'Applied',
-      scores: createEmptyScores()
-    };
-
-    setApplications(prev => [
-      newApp,
-      ...prev
-    ]);
-
+    const newApp = mapBackendAppToFrontend(res.application, candidate);
+    setApplications(prev => [newApp, ...prev]);
     setJobs(prev =>
-      prev.map(job =>
-        job.id === jobId
-          ? {
-              ...job,
-              applicantCount:
-                job.applicantCount + 1
-            }
-          : job
-      )
+      prev.map(j => (j.id === jobId ? { ...j, applicantCount: j.applicantCount + 1 } : j))
     );
 
     addNotification(
       'Application Submitted',
-      `You successfully applied for ${targetJob.title}.`,
+      `You successfully applied for "${targetJob.title}".`,
       'success'
     );
   };
@@ -1054,41 +652,19 @@ export const DataProvider: React.FC<{
      UPDATE APPLICATION STATUS
   ========================================================= */
 
-  const updateApplicationStatus = async (
-    appId: string,
-    status: Application['status']
-  ) => {
-    const stage =
-      mapStatusToStage(status);
+  const updateApplicationStatus = async (appId: string, status: ApplicationStatus) => {
+    const backendStatus = mapFrontendStatusToBackend(status);
 
-    if (supabase) {
-      const { error } = await supabase
-        .from('applications')
-        .update({ stage })
-        .eq('id', appId);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-    }
+    await api.applications.updateStatus(appId, backendStatus);
 
     setApplications(prev =>
-      prev.map(application =>
-        application.id === appId
-          ? {
-              ...application,
-              status
-            }
-          : application
-      )
+      prev.map(app => (app.id === appId ? { ...app, status } : app))
     );
 
     addNotification(
       'Candidate Status Updated',
-      `Application moved to ${status}.`,
-      status === 'Rejected'
-        ? 'alert'
-        : 'info'
+      `Application updated to ${status}.`,
+      status === 'Rejected' ? 'alert' : 'info'
     );
   };
 
@@ -1096,44 +672,18 @@ export const DataProvider: React.FC<{
      SAVE RESUME ANALYSIS
   ========================================================= */
 
-  const saveResumeAnalysis = async (
-    analysis: ResumeAnalysis
-  ) => {
-    setResumeAnalyses(prev => [
-      analysis,
-      ...prev.filter(
-        item => item.id !== analysis.id
-      )
-    ]);
-
-    if (supabase) {
-      const { error } = await supabase.from('resume_analyses').upsert({ id: analysis.id, candidate_id: analysis.candidateId, result: analysis, created_at: analysis.uploadedAt });
-      if (error) throw new Error(`Unable to save resume analysis: ${error.message}`);
-    }
+  const saveResumeAnalysis = async (analysis: ResumeAnalysis) => {
+    setResumeAnalyses(prev => [analysis, ...prev.filter(i => i.id !== analysis.id)]);
 
     setApplications(prev =>
-      prev.map(application => {
-        if (
-          application.candidateId !==
-          analysis.candidateId
-        ) {
-          return application;
-        }
-
-        const updatedScores = {
-          ...application.scores,
-          atsScore:
-            analysis.atsCompatibilityScore
-        };
-
+      prev.map(app => {
+        if (app.candidateId !== analysis.candidateId) return app;
+        const updatedScores = { ...app.scores, atsScore: analysis.atsCompatibilityScore };
         return {
-          ...application,
+          ...app,
           scores: {
             ...updatedScores,
-            overallScore:
-              calculateOverallScore(
-                updatedScores
-              )
+            overallScore: calculateOverallScore(updatedScores)
           }
         };
       })
@@ -1148,81 +698,34 @@ export const DataProvider: React.FC<{
 
   /* =========================================================
      RECORD TEST ATTEMPT
-     Automatically updates Coding / Aptitude Score
   ========================================================= */
 
-  const recordTestAttempt = async (
-    attemptData: Omit<
-      TestAttempt,
-      'id' | 'completedAt'
-    >
-  ) => {
+  const recordTestAttempt = async (attemptData: Omit<TestAttempt, 'id' | 'completedAt'>) => {
     const attempt: TestAttempt = {
       ...attemptData,
       id: createClientId('att'),
-      completedAt:
-        new Date().toISOString()
+      completedAt: new Date().toISOString()
     };
 
-    setTestAttempts(prev => [
-      attempt,
-      ...prev
-    ]);
+    setTestAttempts(prev => [attempt, ...prev]);
 
-    if (supabase) {
-      const { error } = await supabase.from('assessment_attempts').upsert({ id: attempt.id, candidate_id: attempt.candidateId, test_id: attempt.testId, result: attempt, completed_at: attempt.completedAt });
-      if (error) throw new Error(`Unable to save assessment result: ${error.message}`);
-    }
-
+    // Update candidate's test score in applications state
     setApplications(prev =>
-      prev.map(application => {
-        if (
-          application.candidateId !==
-          attempt.candidateId
-        ) {
-          return application;
+      prev.map(app => {
+        if (app.candidateId !== attempt.candidateId) return app;
+        const updatedScores = { ...app.scores };
+        if (attempt.category === 'Coding Test') {
+          updatedScores.codingScore = attempt.percentage;
+        } else if (attempt.category === 'Aptitude Test') {
+          updatedScores.aptitudeScore = attempt.percentage;
+        } else {
+          updatedScores.codingScore = Math.round((updatedScores.codingScore + attempt.percentage) / 2);
         }
-
-        let updatedScores = {
-          ...application.scores
-        };
-
-        if (
-          attempt.category ===
-          'Coding Test'
-        ) {
-          updatedScores.codingScore =
-            attempt.percentage;
-        }
-
-        if (
-          attempt.category ===
-          'Aptitude Test'
-        ) {
-          updatedScores.aptitudeScore =
-            attempt.percentage;
-        }
-
-        if (
-          attempt.category ===
-          'Technical MCQs'
-        ) {
-          updatedScores.codingScore =
-            Math.round(
-              (updatedScores.codingScore +
-                attempt.percentage) /
-                2
-            );
-        }
-
         return {
-          ...application,
+          ...app,
           scores: {
             ...updatedScores,
-            overallScore:
-              calculateOverallScore(
-                updatedScores
-              )
+            overallScore: calculateOverallScore(updatedScores)
           }
         };
       })
@@ -1231,9 +734,7 @@ export const DataProvider: React.FC<{
     addNotification(
       'Test Completed',
       `Scored ${attempt.percentage}% on ${attempt.testTitle}.`,
-      attempt.status === 'Passed'
-        ? 'success'
-        : 'alert'
+      attempt.status === 'Passed' ? 'success' : 'alert'
     );
   };
 
@@ -1241,50 +742,21 @@ export const DataProvider: React.FC<{
      UPDATE INTERVIEW RESPONSE
   ========================================================= */
 
-  const updateInterviewResponse = async (
-    session: InterviewSession
-  ) => {
+  const updateInterviewResponse = async (session: InterviewSession) => {
     setInterviewSession(session);
 
-    if (supabase) {
-      const { error } = await supabase.from('interview_sessions').upsert({ id: session.id, candidate_id: session.candidateId, session, updated_at: new Date().toISOString() });
-      if (error) throw new Error(`Unable to save interview: ${error.message}`);
-    }
-
-    if (
-      session.status !== 'Completed' ||
-      session.overallScore === undefined
-    ) {
-      return;
-    }
+    if (session.status !== 'Completed' || session.overallScore === undefined) return;
 
     setApplications(prev =>
-      prev.map(application => {
-        if (
-          application.candidateId !==
-          session.candidateId
-        ) {
-          return application;
-        }
-
-        const updatedScores = {
-          ...application.scores,
-          interviewScore:
-            session.overallScore ?? 0
-        };
-
+      prev.map(app => {
+        if (app.candidateId !== session.candidateId) return app;
+        const updatedScores = { ...app.scores, interviewScore: session.overallScore ?? 0 };
         return {
-          ...application,
-          status:
-            application.status === 'Applied'
-              ? 'Interviewed'
-              : application.status,
+          ...app,
+          status: app.status === 'Applied' ? 'Interviewed' : app.status,
           scores: {
             ...updatedScores,
-            overallScore:
-              calculateOverallScore(
-                updatedScores
-              )
+            overallScore: calculateOverallScore(updatedScores)
           }
         };
       })
@@ -1297,70 +769,54 @@ export const DataProvider: React.FC<{
     );
   };
 
-  const scheduleInterview = async (input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>) => {
-    if (!user || user.role !== 'recruiter') throw new Error('Only recruiters can schedule interviews.');
+  /* =========================================================
+     SCHEDULE INTERVIEW
+  ========================================================= */
+
+  const scheduleInterview = async (
+    input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>
+  ) => {
+    if (!user || user.role !== 'recruiter') {
+      throw new Error('Only recruiters can schedule interviews.');
+    }
+
     const job = jobs.find(item => item.id === input.jobId);
     const candidate = candidates.find(item => item.id === input.candidateId);
-    const createdAt = new Date().toISOString();
-    if (supabase) {
-      const { data, error } = await supabase.from('interviews').insert({
-        application_id: input.applicationId,
-        candidate_id: input.candidateId,
-        recruiter_id: user.id,
-        job_id: input.jobId,
-        interview_date: input.interviewDate,
-        interview_time: input.interviewTime,
-        interview_type: input.interviewType,
-        mode: input.mode,
-        meeting_link: input.meetingLink || null,
-        notes: input.notes || null,
-        status: input.status
-      }).select('id').single();
-      if (error || !data) throw new Error(error?.message || 'Unable to schedule interview.');
-      setScheduledInterviews(previous => [{ ...input, id: data.id, recruiterId: user.id, jobTitle: job?.title || 'Job', candidateName: candidate?.name || 'Candidate', createdAt }, ...previous]);
-    } else {
-      setScheduledInterviews(previous => [{ ...input, id: createClientId('interview'), recruiterId: user.id, jobTitle: job?.title || 'Job', candidateName: candidate?.name || 'Candidate', createdAt }, ...previous]);
-    }
-    await updateApplicationStatus(input.applicationId, 'Interviewed');
-  };
 
-  /* =========================================================
-     MARK NOTIFICATION AS READ
-  ========================================================= */
+    const res = await api.interviews.schedule({
+      candidateId: input.candidateId,
+      applicationId: input.applicationId,
+      jobId: input.jobId,
+      date: input.interviewDate,
+      time: input.interviewTime,
+      durationMinutes: 45,
+      interviewType: input.interviewType,
+      mode: input.mode,
+      meetingLink: input.meetingLink,
+      notes: input.notes
+    });
 
-  const markNotificationAsRead = (
-    id: string
-  ) => {
-    setNotifications(prev =>
-      prev.map(notification =>
-        notification.id === id
-          ? {
-              ...notification,
-              read: true
-            }
-          : notification
-      )
-    );
+    const newInterview: ScheduledInterview = {
+      ...input,
+      id: res.interview?.id || createClientId('interview'),
+      recruiterId: user.id,
+      jobTitle: job?.title || 'Opportunity',
+      candidateName: candidate?.name || 'Candidate',
+      createdAt: new Date().toISOString()
+    };
 
-    if (supabase) {
-      void supabase
-        .from('notifications')
-        .update({
-          read_at:
-            new Date().toISOString()
-        })
-        .eq('id', id);
+    setScheduledInterviews(prev => [newInterview, ...prev]);
+
+    if (input.applicationId) {
+      await updateApplicationStatus(input.applicationId, 'Interviewed');
     }
   };
-
-  /* =========================================================
-     CONTEXT PROVIDER
-  ========================================================= */
 
   return (
     <DataContext.Provider
       value={{
         jobs,
+        internships,
         applications,
         candidates,
         resumeAnalyses,
@@ -1381,7 +837,8 @@ export const DataProvider: React.FC<{
         setRankingWeights,
         calculateOverallScore,
         addNotification,
-        markNotificationAsRead
+        markNotificationAsRead,
+        refreshData
       }}
     >
       {children}
@@ -1389,18 +846,10 @@ export const DataProvider: React.FC<{
   );
 };
 
-/* =========================================================
-   USE DATA HOOK
-========================================================= */
-
 export const useData = (): DataContextType => {
   const context = useContext(DataContext);
-
   if (!context) {
-    throw new Error(
-      'useData must be used within a DataProvider'
-    );
+    throw new Error('useData must be used within a DataProvider');
   }
-
   return context;
 };

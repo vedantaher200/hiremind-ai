@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { upload } from '../middleware/upload.js';
 import { Role, CompanyVerificationStatus } from '@prisma/client';
 
 const router = Router();
@@ -71,7 +72,9 @@ router.post('/register-candidate', async (req: Request, res: Response) => {
 /* ---------------- RECRUITER REGISTRATION (Admin Verification Required) ---------------- */
 router.post('/register-recruiter', async (req: Request, res: Response) => {
   try {
-    const { name, email, password, companyName, companyWebsite, verificationDocuments } = req.body;
+    const { name, email, password, companyName } = req.body;
+    const companyWebsite = req.body.companyWebsite || req.body.website;
+    const verificationDocuments = req.body.verificationDocuments;
     if (!name || !email || !password || !companyName || !companyWebsite) {
       return res.status(400).json({
         error: 'Name, email, password, company name, and company website are required.'
@@ -135,6 +138,85 @@ router.post('/register-recruiter', async (req: Request, res: Response) => {
   }
 });
 
+/* ---------------- CONTROLLED ADMIN REGISTRATION / PROVISIONING ---------------- */
+router.post('/register-admin', async (req: Request, res: Response) => {
+  try {
+    const { name, email, password } = req.body;
+    const setupKey = req.body.setupKey || req.body.adminSetupKey || req.body.admin_setup_key;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required.' });
+    }
+
+    const expectedKey = process.env.ADMIN_SETUP_KEY;
+    if (!expectedKey) {
+      return res.status(500).json({
+        error: 'Admin setup is not configured on the server. Please contact the system administrator.'
+      });
+    }
+
+    if (!setupKey || setupKey !== expectedKey) {
+      return res.status(403).json({
+        error: 'Invalid admin setup key.'
+      });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existing = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (existing) {
+      if (existing.role === Role.ADMIN) {
+        return res.status(400).json({ error: 'An account with this email is already an Admin. Please sign in.' });
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+      const updatedUser = await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          name: String(name).trim(),
+          passwordHash,
+          role: Role.ADMIN,
+          isEmailVerified: true,
+          title: 'Platform Administrator',
+          location: 'Global Center'
+        }
+      });
+      return res.status(201).json({
+        message: 'Admin account provisioned successfully. You can now log in.',
+        user: {
+          id: updatedUser.id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role
+        }
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email: cleanEmail,
+        name: String(name).trim(),
+        passwordHash,
+        role: Role.ADMIN,
+        isEmailVerified: true,
+        title: 'Platform Administrator',
+        location: 'Global Center'
+      }
+    });
+
+    res.status(201).json({
+      message: 'Admin account created successfully. You can now log in.',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err: any) {
+    console.error('Admin setup error:', err);
+    res.status(500).json({ error: err.message || 'Admin registration failed.' });
+  }
+});
+
 /* ---------------- UNIFIED LOGIN ---------------- */
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -158,32 +240,33 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    // Role check if specific role was requested
-    if (expectedRole && user.role !== expectedRole) {
+    // Role check if specific role was requested (case-insensitive)
+    if (expectedRole && user.role.toUpperCase() !== String(expectedRole).toUpperCase()) {
       return res.status(403).json({
-        error: `This account is registered as ${user.role}, not ${expectedRole}.`
+        error: `This account is registered as a ${user.role.toLowerCase()}, not ${String(expectedRole).toLowerCase()}. Please switch to the ${user.role.toLowerCase()} tab.`,
+        code: 'ROLE_MISMATCH',
+        actualRole: user.role
       });
     }
 
     // Recruiter approval guard
-    if (user.role === Role.RECRUITER && user.company) {
-      const status = user.company.verificationStatus;
-      if (status === CompanyVerificationStatus.PENDING) {
+    if (user.role === Role.RECRUITER) {
+      if (!user.company || user.company.verificationStatus === CompanyVerificationStatus.PENDING) {
         return res.status(403).json({
           error:
             'Your company profile is currently pending verification by our platform administrator. Please wait for approval.',
           code: 'COMPANY_PENDING',
-          companyStatus: status
+          companyStatus: user.company?.verificationStatus || 'PENDING'
         });
       }
-      if (status === CompanyVerificationStatus.REJECTED) {
+      if (user.company.verificationStatus === CompanyVerificationStatus.REJECTED) {
         return res.status(403).json({
           error: `Your company verification was rejected. Reason: ${user.company.rejectionReason || 'Eligibility criteria not met.'}`,
           code: 'COMPANY_REJECTED',
           rejectionReason: user.company.rejectionReason
         });
       }
-      if (status === CompanyVerificationStatus.SUSPENDED) {
+      if (user.company.verificationStatus === CompanyVerificationStatus.SUSPENDED) {
         return res.status(403).json({
           error: 'Your company account has been temporarily suspended. Contact support.',
           code: 'COMPANY_SUSPENDED'
@@ -209,6 +292,42 @@ router.post('/login', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Login error:', err);
     res.status(500).json({ error: err.message || 'Login failed.' });
+  }
+});
+
+/* ---------------- FORGOT / RESET PASSWORD ---------------- */
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    console.log(`[AUTH] Password reset requested for ${cleanEmail} (found: ${Boolean(user)})`);
+    res.json({
+      message: 'If an account exists with this email, password reset instructions have been dispatched.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to process password reset.' });
+  }
+});
+
+/* ---------------- RESEND VERIFICATION EMAIL ---------------- */
+router.post('/resend-verification', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    console.log(`[AUTH] Resend verification for ${cleanEmail} (found: ${Boolean(user)})`);
+    res.json({
+      message: 'If an account exists with this email, verification instructions have been resent.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to resend verification.' });
   }
 });
 
@@ -397,6 +516,27 @@ router.put('/profile', requireAuth, async (req: Request, res: Response) => {
     res.json({ message: 'Profile updated successfully.', user: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update profile.' });
+  }
+});
+
+/* ---------------- UPLOAD AVATAR ---------------- */
+router.post('/avatar', requireAuth, upload.single('avatar'), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Please select an image file to upload.' });
+    }
+
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { avatar: avatarUrl },
+      include: { company: true }
+    });
+
+    res.json({ message: 'Avatar updated successfully.', avatar: avatarUrl, user: updated });
+  } catch (err: any) {
+    console.error('Avatar upload error:', err);
+    res.status(500).json({ error: err.message || 'Failed to upload avatar.' });
   }
 });
 

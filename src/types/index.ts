@@ -62,6 +62,9 @@ export interface Job {
   location: string;
 
   type: 'Full-time' | 'Part-time' | 'Contract' | 'Internship' | 'Remote' | 'Hybrid';
+  employmentType?: 'Full-time' | 'Part-time' | 'Contract' | 'Internship' | 'Remote' | 'Hybrid' | string;
+  workMode?: string;
+  openings?: number;
 
   experienceLevel: 'Entry' | 'Mid' | 'Senior' | 'Lead';
 

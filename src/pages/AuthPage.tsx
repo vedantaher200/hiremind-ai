@@ -16,22 +16,26 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { UserRole } from '../types';
+import { UserProfile, UserRole } from '../types';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'register';
   initialRole?: UserRole;
-  onSuccess: () => void;
+  onSuccess: (user: UserProfile) => void;
   onBackToLanding: () => void;
+  onRoleChange?: (role: UserRole) => void;
+  onModeChange?: (mode: 'login' | 'register') => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'login',
   initialRole = 'candidate',
   onSuccess,
-  onBackToLanding
+  onBackToLanding,
+  onRoleChange,
+  onModeChange
 }) => {
-  const { login, signup, loginWithGoogle, resetPassword, resendConfirmation } = useAuth();
+  const { login, signup, loginWithGoogle, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
   const [role, setRole] = useState<UserRole>(initialRole);
   
@@ -41,10 +45,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
   const [organizationWebsite, setOrganizationWebsite] = useState('');
+  const [adminSetupKey, setAdminSetupKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [pendingApproval, setPendingApproval] = useState(false);
+  const [adminSetupSuccess, setAdminSetupSuccess] = useState(false);
+
+  const switchMode = (newMode: 'login' | 'register' | 'forgot') => {
+    setMode(newMode);
+    if (newMode !== 'forgot') {
+      onModeChange?.(newMode);
+    }
+    setPassword('');
+    setConfirmPassword('');
+    setAdminSetupKey('');
+    setMessage(null);
+    setPendingApproval(false);
+    setAdminSetupSuccess(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,26 +79,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
     try {
       if (mode === 'login') {
-        await login(email, password, role);
+        const loggedInUser = await login(email, password, role);
         setLoading(false);
-        onSuccess();
+        onSuccess(loggedInUser);
       } else if (mode === 'register') {
-        const result = await signup(name, email, password, role, organizationWebsite, companyName);
-        if (result === 'pending_approval') {
+        const result = await signup(name, email, password, role, organizationWebsite, companyName, adminSetupKey);
+        setLoading(false);
+        if (result.status === 'pending_approval') {
           setPendingApproval(true);
-          setMessageType('info');
-          setMessage(
-            'Your recruiter account and company have been submitted for Admin Verification. You will receive an email once your company is approved, after which you can log in.'
-          );
-          setLoading(false);
           return;
         }
-        setLoading(false);
-        onSuccess();
+        if (role === 'admin' || result.status === 'created') {
+          setAdminSetupSuccess(true);
+          return;
+        }
+        if (result.user) {
+          onSuccess(result.user);
+        } else {
+          switchMode('login');
+          setMessageType('success');
+          setMessage('Account created successfully! Please sign in with your credentials.');
+        }
       } else {
         await resetPassword(email);
         setMessageType('success');
-        setMessage('If an account exists, password reset instructions have been sent.');
+        setMessage('If an account exists with this email, password reset instructions have been dispatched.');
         setLoading(false);
       }
     } catch (err: any) {
@@ -89,8 +113,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setMessage('Your company registration is currently pending Admin review. Please wait for approval before logging in.');
       } else if (err?.code === 'COMPANY_REJECTED') {
         setMessage(`Company verification was rejected. Reason: ${err.rejectionReason || 'Eligibility criteria not met'}`);
+      } else if (err?.code === 'ROLE_MISMATCH') {
+        setMessage(err.message || 'Account role mismatch. Please select the correct tab.');
       } else {
-        setMessage(err?.message || 'Authentication error occurred.');
+        setMessage(err?.message || 'Authentication error occurred. Please check your details.');
       }
     }
   };
@@ -98,25 +124,28 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const handleRoleSelect = (newRole: UserRole) => {
     if (newRole === role) return;
     setRole(newRole);
+    onRoleChange?.(newRole);
     setEmail('');
     setPassword('');
     setConfirmPassword('');
+    setAdminSetupKey('');
     setMessage(null);
     setPendingApproval(false);
+    setAdminSetupSuccess(false);
   };
 
   const handleGoogleAuth = async () => {
     setLoading(true);
     setMessage(null);
     try {
-      // Mock/dev credential payload for seamless testing or Google Identity token
       const devPayload = {
         email: role === 'candidate' ? 'rahul.google@example.com' : 'recruiter.google@example.com',
         name: role === 'candidate' ? 'Rahul Mehta (Google)' : 'TechCorp Recruiter (Google)'
       };
       const token = btoa(JSON.stringify(devPayload));
-      await loginWithGoogle(token, role);
-      onSuccess();
+      const loggedInUser = await loginWithGoogle(token, role);
+      setLoading(false);
+      onSuccess(loggedInUser);
     } catch (err: any) {
       setLoading(false);
       setMessageType('error');
@@ -147,14 +176,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         </div>
 
         <h2 className="mt-4 text-center text-2xl font-extrabold text-[#191C1D]">
-          {mode === 'login' && 'Welcome back'}
-          {mode === 'register' && 'Create your account'}
+          {mode === 'login' && (role === 'admin' ? 'Administrator Sign In' : role === 'recruiter' ? 'Recruiter Sign In' : 'Candidate Sign In')}
+          {mode === 'register' && (role === 'admin' ? 'Provision Admin Account' : role === 'recruiter' ? 'Recruiter Registration' : 'Create Candidate Account')}
           {mode === 'forgot' && 'Reset your password'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#737380]">
-          {mode === 'login' && 'Sign in to access your dashboard and opportunities.'}
-          {mode === 'register' && 'Join HireMind AI as a candidate or verified recruiter.'}
-          {mode === 'forgot' && 'Enter your registered email for password recovery'}
+          {mode === 'login' && (role === 'admin' ? 'Sign in to access platform governance and recruiter verifications.' : role === 'recruiter' ? 'Sign in to manage company postings and evaluate candidates.' : 'Sign in to access your dashboard, assessments, and applications.')}
+          {mode === 'register' && (role === 'admin' ? 'Authorized setup requiring your server-side Admin Setup Key.' : role === 'recruiter' ? 'Submit your company details for administrator verification.' : 'Join HireMind AI to discover jobs, internships, and take AI assessments.')}
+          {mode === 'forgot' && 'Enter your registered email for password recovery.'}
         </p>
       </div>
 
@@ -181,6 +210,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 className="w-full py-2.5 rounded-lg bg-orange-700 hover:bg-orange-800 text-white text-sm font-semibold transition-colors cursor-pointer"
               >
                 Back to Sign In
+              </button>
+            </div>
+          ) : adminSetupSuccess ? (
+            <div className="text-center space-y-5">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Admin Account Created Successfully</h3>
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  Your platform administrator account for <span className="font-semibold text-slate-900">{email}</span> has been provisioned. Please continue to Admin Sign In with your credentials.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminSetupSuccess(false);
+                  setMode('login');
+                  setRole('admin');
+                  onModeChange?.('login');
+                  onRoleChange?.('admin');
+                  setPassword('');
+                  setConfirmPassword('');
+                  setAdminSetupKey('');
+                  setMessage(null);
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Continue to Admin Login</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           ) : (
@@ -306,6 +365,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <input
                         type="text"
                         required
+                        autoComplete="name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="e.g. Rahul Mehta"
@@ -326,6 +386,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         <input
                           type="text"
                           required
+                          autoComplete="organization"
                           value={companyName}
                           onChange={(e) => setCompanyName(e.target.value)}
                           placeholder="e.g. Acme Innovations Inc."
@@ -343,6 +404,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                         <input
                           type="url"
                           required
+                          autoComplete="url"
                           value={organizationWebsite}
                           onChange={(e) => setOrganizationWebsite(e.target.value)}
                           placeholder="https://company.example.com"
@@ -362,6 +424,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     <input
                       type="email"
                       required
+                      autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder={role === 'admin' ? 'admin@hiremind.ai' : 'name@example.com'}
@@ -379,7 +442,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       {mode === 'login' && (
                         <button
                           type="button"
-                          onClick={() => setMode('forgot')}
+                          onClick={() => switchMode('forgot')}
                           className="text-xs font-semibold text-[#3525CD] hover:underline cursor-pointer"
                         >
                           Forgot?
@@ -391,6 +454,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <input
                         type="password"
                         required
+                        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
@@ -410,12 +474,34 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <input
                         type="password"
                         required
+                        autoComplete="new-password"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
                         className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
                       />
                     </div>
+                  </div>
+                )}
+
+                {mode === 'register' && role === 'admin' && (
+                  <div>
+                    <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                      Admin Setup Key
+                    </label>
+                    <div className="mt-1 relative">
+                      <ShieldCheck className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        required
+                        autoComplete="off"
+                        value={adminSetupKey}
+                        onChange={(e) => setAdminSetupKey(e.target.value)}
+                        placeholder="Enter server admin provisioning key"
+                        className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#4F46E5]/20"
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">Required only for controlled administrator account setup.</p>
                   </div>
                 )}
 
@@ -430,8 +516,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     ) : (
                       <>
                         <span>
-                          {mode === 'login' && `Continue as ${role === 'admin' ? 'Admin' : role === 'candidate' ? 'Candidate' : 'Recruiter'}`}
-                          {mode === 'register' && (role === 'recruiter' ? 'Submit Company Application' : 'Create Candidate Account')}
+                          {mode === 'login' && (role === 'admin' ? 'Sign In to Admin Dashboard' : role === 'recruiter' ? 'Sign In as Recruiter' : 'Sign In as Candidate')}
+                          {mode === 'register' && (role === 'recruiter' ? 'Submit Company Application' : role === 'admin' ? 'Provision Admin Account' : 'Create Candidate Account')}
                           {mode === 'forgot' && 'Send Reset Instructions'}
                         </span>
                         <ArrowRight className="w-4 h-4" />
@@ -442,33 +528,31 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </form>
 
               {/* Switch Mode Links */}
-              {role !== 'admin' && (
-                <div className="mt-5 pt-4 border-t border-[#E5E7EB] text-center text-xs text-[#464555]">
-                  {mode === 'login' ? (
-                    <p>
-                      Don't have an account yet?{' '}
-                      <button
-                        type="button"
-                        onClick={() => setMode('register')}
-                        className="font-bold text-[#3525CD] hover:underline cursor-pointer"
-                      >
-                        Register here
-                      </button>
-                    </p>
-                  ) : (
-                    <p>
-                      Already have an account?{' '}
-                      <button
-                        type="button"
-                        onClick={() => setMode('login')}
-                        className="font-bold text-[#3525CD] hover:underline cursor-pointer"
-                      >
-                        Sign in here
-                      </button>
-                    </p>
-                  )}
-                </div>
-              )}
+              <div className="mt-5 pt-4 border-t border-[#E5E7EB] text-center text-xs text-[#464555]">
+                {mode === 'login' ? (
+                  <p>
+                    {role === 'admin' ? 'Need to provision initial admin? ' : "Don't have an account yet? "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode('register')}
+                      className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                    >
+                      {role === 'admin' ? 'Provision with Setup Key' : 'Register here'}
+                    </button>
+                  </p>
+                ) : (
+                  <p>
+                    Already have an account?{' '}
+                    <button
+                      type="button"
+                      onClick={() => switchMode('login')}
+                      className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                    >
+                      Sign in here
+                    </button>
+                  </p>
+                )}
+              </div>
             </>
           )}
         </div>

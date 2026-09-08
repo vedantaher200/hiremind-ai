@@ -30,8 +30,13 @@ import { RecruiterProfilePage } from './pages/recruiter/RecruiterProfilePage';
 
 // Admin Pages
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
+import { AdminCandidatesPage } from './pages/admin/AdminCandidatesPage';
+import { AdminJobsPage } from './pages/admin/AdminJobsPage';
+import { AdminInternshipsPage } from './pages/admin/AdminInternshipsPage';
+import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage';
+import { AdminProfilePage } from './pages/admin/AdminProfilePage';
 
-import { UserRole } from './types';
+import { UserRole, UserProfile } from './types';
 
 const MainAppContent: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -39,9 +44,42 @@ const MainAppContent: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>('landing');
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authRole, setAuthRole] = useState<UserRole>('candidate');
-  const [selectedCandidateId, setSelectedCandidateId] =
-    useState<string>('cand-rahul-01');
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const hasMounted = React.useRef(false);
+
+  const handleAuthSuccess = (authenticatedUser?: UserProfile) => {
+    const targetRole = authenticatedUser?.role || user?.role;
+    if (targetRole === 'admin') {
+      setCurrentPage('admin-dashboard');
+    } else if (targetRole === 'recruiter') {
+      setCurrentPage('recruiter-dashboard');
+    } else if (targetRole === 'candidate') {
+      setCurrentPage('dashboard');
+    } else {
+      console.warn('Unknown authenticated role in handleAuthSuccess:', targetRole);
+      setCurrentPage('auth');
+    }
+  };
+
+  // Auto-route on session restore after refresh
+  React.useEffect(() => {
+    if (!isLoading && isAuthenticated && user) {
+      if (!hasMounted.current) {
+        hasMounted.current = true;
+        if (currentPage === 'landing' || currentPage === 'auth') {
+          if (user.role === 'admin') {
+            setCurrentPage('admin-dashboard');
+          } else if (user.role === 'recruiter') {
+            setCurrentPage('recruiter-dashboard');
+          } else if (user.role === 'candidate') {
+            setCurrentPage('dashboard');
+          }
+        }
+      }
+    }
+  }, [isLoading, isAuthenticated, user, currentPage]);
 
   const handleNavigate = (page: string, candidateId?: string) => {
     if (candidateId) {
@@ -76,6 +114,7 @@ const MainAppContent: React.FC = () => {
     'candidate-profile',
     'profile',
     'opportunities',
+    'internships'
   ];
 
   const recruiterOnlyPages = [
@@ -86,16 +125,27 @@ const MainAppContent: React.FC = () => {
     'smart-ranking',
     'jobs-management',
     'jobs',
+    'internships-management',
     'analytics',
     'reports',
     'resume-screening',
     'recruiter-profile',
   ];
 
+  const adminOnlyPages = [
+    'admin-dashboard',
+    'admin-candidates',
+    'admin-jobs',
+    'admin-internships',
+    'admin-analytics',
+    'admin-profile'
+  ];
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center text-sm font-semibold text-[#3525CD]">
-        Loading your secure session…
+      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center text-sm font-semibold text-[#3525CD] gap-3">
+        <div className="w-8 h-8 border-3 border-[#3525CD] border-t-transparent rounded-full animate-spin"></div>
+        <span>Restoring your authenticated session…</span>
       </div>
     );
   }
@@ -116,66 +166,48 @@ const MainAppContent: React.FC = () => {
   }
 
   // Authentication page
-  if (currentPage === 'auth') {
+  if (currentPage === 'auth' || !isAuthenticated) {
     return (
       <AuthPage
         initialMode={authMode}
         initialRole={authRole}
-        onSuccess={() => {
-          if (authRole === 'admin') {
-            setCurrentPage('admin-dashboard');
-          } else if (authRole === 'recruiter') {
-            setCurrentPage('recruiter-dashboard');
-          } else {
-            setCurrentPage('dashboard');
-          }
-        }}
+        onSuccess={handleAuthSuccess}
         onBackToLanding={() => setCurrentPage('landing')}
+        onRoleChange={(newRole) => setAuthRole(newRole)}
+        onModeChange={(newMode) => setAuthMode(newMode)}
       />
-    );
-  }
-
-  // Redirect unauthenticated users to login
-  if (!isAuthenticated) {
-    return (
-      <AuthPage
-        initialMode="login"
-        initialRole="candidate"
-        onSuccess={() => {
-          if (user?.role === 'admin') {
-            setCurrentPage('admin-dashboard');
-          } else if (user?.role === 'recruiter') {
-            setCurrentPage('recruiter-dashboard');
-          } else {
-            setCurrentPage('dashboard');
-          }
-        }}
-        onBackToLanding={() => setCurrentPage('landing')}
-      />
-    );
-  }
-
-  // Prevent candidates from accessing recruiter pages
-  if (
-    user?.role === 'candidate' &&
-    recruiterOnlyPages.includes(currentPage)
-  ) {
-    return (
-      <CandidateDashboard onNavigate={handleNavigate} />
-    );
-  }
-
-  // Prevent recruiters/admins from accessing candidate pages
-  if (
-    (user?.role === 'recruiter' || user?.role === 'admin') &&
-    candidateOnlyPages.includes(currentPage)
-  ) {
-    return (
-      <RecruiterDashboard onNavigate={handleNavigate} />
     );
   }
 
   const renderCurrentView = () => {
+    // Cross-role page access guards
+    if (user?.role === 'candidate' && (recruiterOnlyPages.includes(currentPage) || adminOnlyPages.includes(currentPage))) {
+      return <CandidateDashboard onNavigate={handleNavigate} />;
+    }
+    if (user?.role === 'recruiter' && (candidateOnlyPages.includes(currentPage) || adminOnlyPages.includes(currentPage))) {
+      return <RecruiterDashboard onNavigate={handleNavigate} />;
+    }
+    if (user?.role === 'admin') {
+      if (candidateOnlyPages.includes(currentPage)) {
+        return <AdminDashboardPage />;
+      }
+      if (currentPage === 'candidates-list' || currentPage === 'candidates') {
+        return <AdminCandidatesPage onNavigate={handleNavigate} />;
+      }
+      if (currentPage === 'jobs-management' || currentPage === 'jobs') {
+        return <AdminJobsPage />;
+      }
+      if (currentPage === 'internships-management') {
+        return <AdminInternshipsPage />;
+      }
+      if (currentPage === 'analytics') {
+        return <AdminAnalyticsPage />;
+      }
+      if (recruiterOnlyPages.includes(currentPage)) {
+        return <AdminDashboardPage />;
+      }
+    }
+
     switch (currentPage) {
       // =========================
       // Candidate Views
@@ -223,6 +255,21 @@ const MainAppContent: React.FC = () => {
       // =========================
       case 'admin-dashboard':
         return <AdminDashboardPage />;
+
+      case 'admin-candidates':
+        return <AdminCandidatesPage onNavigate={handleNavigate} />;
+
+      case 'admin-jobs':
+        return <AdminJobsPage />;
+
+      case 'admin-internships':
+        return <AdminInternshipsPage />;
+
+      case 'admin-analytics':
+        return <AdminAnalyticsPage />;
+
+      case 'admin-profile':
+        return <AdminProfilePage onNavigate={handleNavigate} />;
 
       // =========================
       // Recruiter Views
@@ -283,7 +330,14 @@ const MainAppContent: React.FC = () => {
         if (user?.role === 'recruiter') {
           return <RecruiterDashboard onNavigate={handleNavigate} />;
         }
-        return <CandidateDashboard onNavigate={handleNavigate} />;
+        if (user?.role === 'candidate') {
+          return <CandidateDashboard onNavigate={handleNavigate} />;
+        }
+        return (
+          <div className="p-8 text-center text-slate-600">
+            <p className="font-semibold">Unable to resolve authorized dashboard for this role.</p>
+          </div>
+        );
     }
   };
 

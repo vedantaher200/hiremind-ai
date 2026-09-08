@@ -18,6 +18,10 @@ export default defineConfig(() => {
         '/api': {
           target: 'http://localhost:5000',
           changeOrigin: true
+        },
+        '/uploads': {
+          target: 'http://localhost:5000',
+          changeOrigin: true
         }
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

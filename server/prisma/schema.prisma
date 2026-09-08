@@ -1,0 +1,364 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CANDIDATE
+  RECRUITER
+  ADMIN
+}
+
+enum CompanyVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum PostingStatus {
+  ACTIVE
+  CLOSED
+  DRAFT
+}
+
+enum ApplicationType {
+  JOB
+  INTERNSHIP
+}
+
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  SHORTLISTED
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  SELECTED
+  HIRED
+  REJECTED
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  email               String       @unique
+  passwordHash        String?
+  name                String
+  role                Role         @default(CANDIDATE)
+  isEmailVerified     Boolean      @default(false)
+  emailVerifyToken    String?
+  resetPasswordToken  String?
+  googleId            String?      @unique
+  avatar              String?
+  phone               String?
+  location            String?
+  title               String?
+  bio                 String?
+  linkedinUrl         String?
+  githubUrl           String?
+  portfolioUrl        String?
+  organizationWebsite String?
+  matchScore          Float?
+  profileCompletion   Int?         @default(20)
+  availabilityStatus  String?      @default("Available")
+  yearsOfExperience   Int?         @default(0)
+  skills              String[]     @default([])
+  experience          Json?        @default("[]")
+  education           Json?        @default("[]")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  company             Company?
+  resumes             Resume[]
+  resumeAnalyses      ResumeAnalysis[]
+  applications        Application[] @relation("CandidateApplications")
+  recruiterApps       Application[] @relation("RecruiterApplications")
+  testAttempts        TestAttempt[]
+  notifications       Notification[]
+  candidateInterviews ScheduledInterview[] @relation("CandidateInterviews")
+  recruiterInterviews ScheduledInterview[] @relation("RecruiterInterviews")
+  feedbackGiven       Feedback[]   @relation("CandidateFeedback")
+  auditLogs           AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Company {
+  id                    String                    @id @default(uuid())
+  recruiterId           String                    @unique
+  recruiter             User                      @relation(fields: [recruiterId], references: [id], onDelete: Cascade)
+  name                  String
+  website               String
+  logo                  String?
+  industry              String?                   @default("Technology")
+  description           String?
+  address               String?
+  location              String?
+  contactEmail          String?
+  contactPhone          String?
+  companySize           String?                   @default("11-50 employees")
+  foundedYear           Int?
+  linkedinUrl           String?
+  verificationStatus    CompanyVerificationStatus @default(PENDING)
+  verificationDocuments Json?                     @default("[]")
+  rejectionReason       String?
+  verifiedBy            String?
+  verifiedAt            DateTime?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  jobs                  Job[]
+  internships           Internship[]
+  applications          Application[]
+  feedback              Feedback[]
+
+  @@index([verificationStatus])
+}
+
+model Job {
+  id                  String        @id @default(uuid())
+  recruiterId         String
+  companyId           String
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title               String
+  department          String        @default("Engineering")
+  description         String
+  requirements        String[]      @default([])
+  requiredSkills      String[]      @default([])
+  preferredSkills     String[]      @default([])
+  experienceLevel     String        @default("Mid")
+  location            String        @default("Remote")
+  workMode            String        @default("Remote")
+  employmentType      String        @default("Full-time")
+  salaryRange         String?
+  openings            Int           @default(1)
+  deadline            DateTime?
+  status              PostingStatus @default(ACTIVE)
+  applicantCount      Int           @default(0)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  applications        Application[]
+  interviews          ScheduledInterview[]
+  feedback            Feedback[]
+
+  @@index([status])
+  @@index([recruiterId])
+  @@index([companyId])
+}
+
+model Internship {
+  id                  String        @id @default(uuid())
+  recruiterId         String
+  companyId           String
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title               String
+  department          String        @default("Engineering")
+  description         String
+  skills              String[]      @default([])
+  eligibility         String?       @default("Students or Recent Graduates")
+  location            String        @default("Remote")
+  mode                String        @default("Remote")
+  duration            String        @default("3 Months")
+  stipend             String?       @default("Paid")
+  startDate           DateTime?
+  openings            Int           @default(1)
+  deadline            DateTime?
+  status              PostingStatus @default(ACTIVE)
+  applicantCount      Int           @default(0)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  applications        Application[]
+  interviews          ScheduledInterview[]
+  feedback            Feedback[]
+
+  @@index([status])
+  @@index([recruiterId])
+  @@index([companyId])
+}
+
+model Application {
+  id                  String            @id @default(uuid())
+  candidateId         String
+  candidate           User              @relation("CandidateApplications", fields: [candidateId], references: [id], onDelete: Cascade)
+  recruiterId         String
+  recruiter           User              @relation("RecruiterApplications", fields: [recruiterId], references: [id], onDelete: Cascade)
+  companyId           String
+  company             Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobId               String?
+  job                 Job?              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  internshipId        String?
+  internship          Internship?       @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  applicationType     ApplicationType   @default(JOB)
+  status              ApplicationStatus @default(APPLIED)
+  resumeId            String?
+  resume              Resume?           @relation(fields: [resumeId], references: [id], onDelete: SetNull)
+  scores              Json?             @default("{\"atsScore\":0,\"interviewScore\":0,\"codingScore\":0,\"aptitudeScore\":0,\"overallScore\":0}")
+  notes               String?
+  appliedAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  interviews          ScheduledInterview[]
+  feedback            Feedback[]
+
+  @@index([candidateId])
+  @@index([recruiterId])
+  @@index([jobId])
+  @@index([internshipId])
+  @@index([status])
+}
+
+model Resume {
+  id                  String           @id @default(uuid())
+  candidateId         String
+  candidate           User             @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  fileName            String
+  storagePath         String
+  fileType            String           @default("application/pdf")
+  fileSize            Int
+  extractedText       String?          @db.Text
+  createdAt           DateTime         @default(now())
+
+  applications        Application[]
+  analyses            ResumeAnalysis[]
+
+  @@index([candidateId])
+}
+
+model ResumeAnalysis {
+  id                     String         @id @default(uuid())
+  resumeId               String
+  resume                 Resume         @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  candidateId            String
+  candidate              User           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  postingId              String?
+  atsScore               Float          @default(0)
+  skillMatch             Float?         @default(0)
+  experienceMatch        Float?         @default(0)
+  educationMatch         Float?         @default(0)
+  extractedSkills        String[]       @default([])
+  missingSkills          String[]       @default([])
+  strengths              String[]       @default([])
+  weaknesses             String[]       @default([])
+  experienceSummary      String?        @db.Text
+  educationSummary       String?        @db.Text
+  recommendation         String?
+  improvementSuggestions String[]       @default([])
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@index([candidateId])
+  @@index([resumeId])
+}
+
+model AssessmentTest {
+  id                  String         @id @default(uuid())
+  title               String
+  description         String
+  category            String         @default("General")
+  durationMinutes     Int            @default(20)
+  totalQuestions      Int            @default(5)
+  totalPoints         Int            @default(20)
+  passingScore        Int            @default(50)
+  questions           Json           @default("[]")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  attempts            TestAttempt[]
+}
+
+model TestAttempt {
+  id                  String         @id @default(uuid())
+  testId              String
+  test                AssessmentTest @relation(fields: [testId], references: [id], onDelete: Cascade)
+  candidateId         String
+  candidate           User           @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  score               Int
+  maxScore            Int
+  percentage          Float
+  passed              Boolean
+  timeSpentSeconds    Int            @default(0)
+  completedAt         DateTime       @default(now())
+
+  @@index([candidateId])
+  @@index([testId])
+}
+
+model ScheduledInterview {
+  id                  String         @id @default(uuid())
+  candidateId         String
+  candidate           User           @relation("CandidateInterviews", fields: [candidateId], references: [id], onDelete: Cascade)
+  recruiterId         String
+  recruiter           User           @relation("RecruiterInterviews", fields: [recruiterId], references: [id], onDelete: Cascade)
+  applicationId       String?
+  application         Application?   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  jobId               String?
+  job                 Job?           @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  internshipId        String?
+  internship          Internship?    @relation(fields: [internshipId], references: [id], onDelete: SetNull)
+  date                String
+  time                String
+  durationMinutes     Int            @default(45)
+  interviewType       String         @default("Technical")
+  mode                String         @default("Virtual (Google Meet)")
+  meetingLink         String?
+  notes               String?
+  status              String         @default("Scheduled")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([candidateId])
+  @@index([recruiterId])
+}
+
+model Feedback {
+  id                  String         @id @default(uuid())
+  candidateId         String
+  candidate           User           @relation("CandidateFeedback", fields: [candidateId], references: [id], onDelete: Cascade)
+  companyId           String
+  company             Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobId               String?
+  job                 Job?           @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  internshipId        String?
+  internship          Internship?    @relation(fields: [internshipId], references: [id], onDelete: SetNull)
+  applicationId       String?
+  application         Application?   @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  rating              Int            @default(5)
+  feedback            String         @db.Text
+  createdAt           DateTime       @default(now())
+
+  @@index([companyId])
+  @@index([candidateId])
+}
+
+model Notification {
+  id                  String         @id @default(uuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title               String
+  message             String
+  type                String         @default("info")
+  isRead              Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id                  String         @id @default(uuid())
+  userId              String?
+  user                User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action              String
+  entityType          String
+  entityId            String?
+  details             Json?
+  createdAt           DateTime       @default(now())
+
+  @@index([action])
+  @@index([entityType])
+}

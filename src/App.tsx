@@ -15,6 +15,7 @@ import { TestsPage } from './pages/candidate/TestsPage';
 import { ResultsPage } from './pages/candidate/ResultsPage';
 import { CandidateProfilePage } from './pages/candidate/CandidateProfilePage';
 import { JobsPage } from './pages/candidate/JobsPage';
+import { InternshipBoardPage } from './pages/candidate/InternshipBoardPage';
 
 // Recruiter Pages
 import { RecruiterDashboard } from './pages/recruiter/RecruiterDashboard';
@@ -22,9 +23,13 @@ import { CandidatesListPage } from './pages/recruiter/CandidatesListPage';
 import { CandidateDetailsPage } from './pages/recruiter/CandidateDetailsPage';
 import { SmartRankingPage } from './pages/recruiter/SmartRankingPage';
 import { JobsManagementPage } from './pages/recruiter/JobsManagementPage';
+import { InternshipPostingsPage } from './pages/recruiter/InternshipPostingsPage';
 import { AnalyticsPage } from './pages/recruiter/AnalyticsPage';
 import { ResumeScreeningPage } from './pages/recruiter/ResumeScreeningPage';
 import { RecruiterProfilePage } from './pages/recruiter/RecruiterProfilePage';
+
+// Admin Pages
+import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 
 import { UserRole } from './types';
 
@@ -117,7 +122,9 @@ const MainAppContent: React.FC = () => {
         initialMode={authMode}
         initialRole={authRole}
         onSuccess={() => {
-          if (authRole === 'recruiter' || authRole === 'admin') {
+          if (authRole === 'admin') {
+            setCurrentPage('admin-dashboard');
+          } else if (authRole === 'recruiter') {
             setCurrentPage('recruiter-dashboard');
           } else {
             setCurrentPage('dashboard');
@@ -135,7 +142,9 @@ const MainAppContent: React.FC = () => {
         initialMode="login"
         initialRole="candidate"
         onSuccess={() => {
-          if (user?.role === 'recruiter' || user?.role === 'admin') {
+          if (user?.role === 'admin') {
+            setCurrentPage('admin-dashboard');
+          } else if (user?.role === 'recruiter') {
             setCurrentPage('recruiter-dashboard');
           } else {
             setCurrentPage('dashboard');
@@ -200,11 +209,20 @@ const MainAppContent: React.FC = () => {
       case 'opportunities':
         return <JobsPage />;
 
+      case 'internships':
+        return <InternshipBoardPage />;
+
       // =========================
       // Shared Views
       // =========================
       case 'help':
         return <HelpCenterPage />;
+
+      // =========================
+      // Admin Views
+      // =========================
+      case 'admin-dashboard':
+        return <AdminDashboardPage />;
 
       // =========================
       // Recruiter Views
@@ -239,6 +257,11 @@ const MainAppContent: React.FC = () => {
           <JobsManagementPage onNavigate={handleNavigate} />
         );
 
+      case 'internships-management':
+        return (
+          <InternshipPostingsPage />
+        );
+
       case 'resume-screening':
         return (
           <ResumeScreeningPage onNavigate={handleNavigate} />
@@ -254,11 +277,13 @@ const MainAppContent: React.FC = () => {
         return <AnalyticsPage />;
 
       default:
-        return user?.role === 'recruiter' || user?.role === 'admin' ? (
-          <RecruiterDashboard onNavigate={handleNavigate} />
-        ) : (
-          <CandidateDashboard onNavigate={handleNavigate} />
-        );
+        if (user?.role === 'admin') {
+          return <AdminDashboardPage />;
+        }
+        if (user?.role === 'recruiter') {
+          return <RecruiterDashboard onNavigate={handleNavigate} />;
+        }
+        return <CandidateDashboard onNavigate={handleNavigate} />;
     }
   };
 

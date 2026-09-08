@@ -9,7 +9,11 @@ import {
   Mail, 
   User, 
   ArrowLeft,
-  CheckCircle2
+  CheckCircle2,
+  Building,
+  ShieldCheck,
+  Globe,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types';
@@ -27,50 +31,67 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   onSuccess,
   onBackToLanding
 }) => {
-  const { login, signup, resetPassword, resendConfirmation } = useAuth();
+  const { login, signup, loginWithGoogle, resetPassword, resendConfirmation } = useAuth();
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
   const [role, setRole] = useState<UserRole>(initialRole);
   
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [organizationWebsite, setOrganizationWebsite] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
-  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
+    if (mode === 'register' && password !== confirmPassword) {
+      setLoading(false);
+      setMessageType('error');
+      setMessage('Passwords do not match. Please verify.');
+      return;
+    }
+
     try {
       if (mode === 'login') {
         await login(email, password, role);
+        setLoading(false);
+        onSuccess();
       } else if (mode === 'register') {
-        const result = await signup(name, email, password, role, organizationWebsite);
-        if (result === 'confirmation_required') {
-          setConfirmationEmail(email.trim().toLowerCase());
-          setMessageType('success');
-          setMessage('Your account was created. Confirm your email to activate it.');
+        const result = await signup(name, email, password, role, organizationWebsite, companyName);
+        if (result === 'pending_approval') {
+          setPendingApproval(true);
+          setMessageType('info');
+          setMessage(
+            'Your recruiter account and company have been submitted for Admin Verification. You will receive an email once your company is approved, after which you can log in.'
+          );
           setLoading(false);
           return;
         }
+        setLoading(false);
+        onSuccess();
       } else {
         await resetPassword(email);
         setMessageType('success');
         setMessage('If an account exists, password reset instructions have been sent.');
         setLoading(false);
-        return;
       }
-
-      setLoading(false);
-      onSuccess();
     } catch (err: any) {
       setLoading(false);
       setMessageType('error');
-      setMessage(err?.message || 'Authentication error occurred.');
+      if (err?.code === 'COMPANY_PENDING') {
+        setMessage('Your company registration is currently pending Admin review. Please wait for approval before logging in.');
+      } else if (err?.code === 'COMPANY_REJECTED') {
+        setMessage(`Company verification was rejected. Reason: ${err.rejectionReason || 'Eligibility criteria not met'}`);
+      } else {
+        setMessage(err?.message || 'Authentication error occurred.');
+      }
     }
   };
 
@@ -79,23 +100,27 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setRole(newRole);
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setMessage(null);
-    setConfirmationEmail(null);
+    setPendingApproval(false);
   };
 
-  const handleResendConfirmation = async () => {
-    if (!confirmationEmail) return;
+  const handleGoogleAuth = async () => {
     setLoading(true);
     setMessage(null);
     try {
-      await resendConfirmation(confirmationEmail);
-      setMessageType('success');
-      setMessage(`A new confirmation email was sent to ${confirmationEmail}.`);
-    } catch (error) {
-      setMessageType('error');
-      setMessage(error instanceof Error ? error.message : 'Unable to resend the confirmation email.');
-    } finally {
+      // Mock/dev credential payload for seamless testing or Google Identity token
+      const devPayload = {
+        email: role === 'candidate' ? 'rahul.google@example.com' : 'recruiter.google@example.com',
+        name: role === 'candidate' ? 'Rahul Mehta (Google)' : 'TechCorp Recruiter (Google)'
+      };
+      const token = btoa(JSON.stringify(devPayload));
+      await loginWithGoogle(token, role);
+      onSuccess();
+    } catch (err: any) {
       setLoading(false);
+      setMessageType('error');
+      setMessage(err?.message || 'Google Sign-In failed.');
     }
   };
 
@@ -105,7 +130,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         {/* Back button */}
         <button
           onClick={onBackToLanding}
-          className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-stone-600 hover:text-orange-700 transition-colors"
+          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-stone-600 hover:text-orange-700 transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
@@ -127,195 +152,325 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           {mode === 'forgot' && 'Reset your password'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#737380]">
-          {mode === 'login' && 'Sign in to continue to your recruitment workspace.'}
-          {mode === 'register' && 'Set up your candidate or recruiter workspace.'}
-          {mode === 'forgot' && 'Enter your email to receive recovery instructions'}
+          {mode === 'login' && 'Sign in to access your dashboard and opportunities.'}
+          {mode === 'register' && 'Join HireMind AI as a candidate or verified recruiter.'}
+          {mode === 'forgot' && 'Enter your registered email for password recovery'}
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 sm:px-10 rounded-2xl border border-slate-200 shadow-sm">
-          {confirmationEmail ? (
+          {pendingApproval ? (
             <div className="text-center space-y-5">
-              <div className="w-12 h-12 rounded-full bg-orange-50 text-orange-700 mx-auto flex items-center justify-center"><Mail className="w-6 h-6" /></div>
-              <div><h3 className="text-lg font-semibold text-slate-900">Confirm your email</h3><p className="mt-2 text-sm leading-6 text-slate-600">We sent a confirmation link to <strong>{confirmationEmail}</strong>. Open it to activate your account, then you’ll return here automatically.</p></div>
-              {message && <div className={`p-3 rounded-lg text-sm text-left ${messageType === 'error' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-orange-50 text-orange-800 border border-orange-100'}`}>{message}</div>}
-              <button type="button" onClick={() => void handleResendConfirmation()} disabled={loading} className="w-full py-2.5 rounded-lg bg-orange-700 hover:bg-orange-800 disabled:opacity-60 text-white text-sm font-semibold transition-colors">{loading ? 'Sending…' : 'Resend confirmation email'}</button>
-              <button type="button" onClick={() => { setConfirmationEmail(null); setMode('login'); setMessage(null); }} className="text-sm font-medium text-orange-700 hover:text-orange-800">Back to sign in</button>
-            </div>
-          ) : <>
-          {/* Role selector buttons */}
-          {mode !== 'forgot' && (
-            <div className="mb-6">
-              <label className="block text-xs font-bold text-[#464555] mb-2 uppercase tracking-wider">
-                Select Your Role
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleRoleSelect('candidate')}
-                  className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 text-center transition-all ${
-                    role === 'candidate'
-                      ? 'border-[#3525CD] bg-indigo-50/50 text-[#3525CD] shadow-xs'
-                      : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
-                  }`}
-                >
-                  <UserCheck className="w-5 h-5" />
-                  <span className="text-xs font-bold">Candidate</span>
-                  <span className="text-[10px] text-[#737380]">Interviews & Tests</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleRoleSelect('recruiter')}
-                  className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 text-center transition-all ${
-                    role === 'recruiter'
-                      ? 'border-[#3525CD] bg-indigo-50/50 text-[#3525CD] shadow-xs'
-                      : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
-                  }`}
-                >
-                  <Briefcase className="w-5 h-5" />
-                  <span className="text-xs font-bold">Recruiter</span>
-                  <span className="text-[10px] text-[#737380]">Hiring & Ranking</span>
-                </button>
+              <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 mx-auto flex items-center justify-center">
+                <ShieldCheck className="w-6 h-6" />
               </div>
-            </div>
-          )}
-
-          {message && (
-            <div className={`mb-4 p-3 rounded-lg border text-sm font-medium flex items-center gap-2 ${messageType === 'error' ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-orange-50 border-orange-100 text-orange-800'}`}>
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{message}</span>
-            </div>
-          )}
-
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            {mode === 'register' && (
               <div>
-                <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
-                  Full Name
-                </label>
-                <div className="mt-1 relative">
-                  <User className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. Rahul Mehta"
-                    className="w-full pl-10 pr-4 py-2.5 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
-                  />
-                </div>
+                <h3 className="text-lg font-bold text-slate-900">Company Verification Pending</h3>
+                <p className="mt-2 text-xs leading-5 text-slate-600">
+                  Your recruiter registration and company details have been recorded. Our platform administrator is reviewing your company. You will be able to log in once approved.
+                </p>
               </div>
-            )}
-            {mode === 'register' && role === 'recruiter' && (
-              <div>
-                <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">Organization Website</label>
-                <input type="url" required value={organizationWebsite} onChange={(e) => setOrganizationWebsite(e.target.value)} placeholder="https://company.example" className="mt-1 w-full px-4 py-2.5 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4F46E5]/20" />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
-                Email Address
-              </label>
-              <div className="mt-1 relative">
-                <Mail className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  key={`email-${role}`}
-                  name={`${role}-email`}
-                  autoComplete="username"
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
-                />
-              </div>
-            </div>
-
-            {mode !== 'forgot' && (
-              <div>
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
-                    Password
-                  </label>
-                  {mode === 'login' && (
-                    <button
-                      type="button"
-                      onClick={() => setMode('forgot')}
-                      className="text-xs font-semibold text-[#3525CD] hover:underline"
-                    >
-                      Forgot password?
-                    </button>
-                  )}
-                </div>
-                <div className="mt-1 relative">
-                  <Lock className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    key={`password-${role}`}
-                    name={`${role}-password`}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div>
               <button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-2 py-3 rounded-xl bg-[#0F766E] text-white text-sm font-bold shadow-sm hover:bg-[#115E59] active:bg-[#0B4F4A] disabled:bg-[#94A3B8] disabled:text-white disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E] transition-colors flex items-center justify-center gap-2 enabled:cursor-pointer"
+                type="button"
+                onClick={() => {
+                  setPendingApproval(false);
+                  setMode('login');
+                  setMessage(null);
+                }}
+                className="w-full py-2.5 rounded-lg bg-orange-700 hover:bg-orange-800 text-white text-sm font-semibold transition-colors cursor-pointer"
               >
-                {loading ? (
-                  <span>Authenticating...</span>
-                ) : (
-                  <>
-                    <span>
-                      {mode === 'login' && `Continue as ${role === 'candidate' ? 'Candidate' : 'Recruiter'}`}
-                      {mode === 'register' && `Create ${role === 'candidate' ? 'Candidate' : 'Recruiter'} Account`}
-                      {mode === 'forgot' && 'Send Reset Instructions'}
-                    </span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
+                Back to Sign In
               </button>
             </div>
-          </form>
+          ) : (
+            <>
+              {/* Role selector tabs */}
+              {mode !== 'forgot' && (
+                <div className="mb-6">
+                  <label className="block text-xs font-bold text-[#464555] mb-2 uppercase tracking-wider">
+                    Select Your Role
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleRoleSelect('candidate')}
+                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
+                        role === 'candidate'
+                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
+                      }`}
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      <span className="text-xs">Candidate</span>
+                    </button>
 
-          {/* Switch Mode Links */}
-          <div className="mt-6 pt-6 border-t border-[#E5E7EB] text-center text-xs text-[#464555]">
-            {mode === 'login' ? (
-              <p>
-                Don't have an account yet?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('register')}
-                  className="font-bold text-[#3525CD] hover:underline"
+                    <button
+                      type="button"
+                      onClick={() => handleRoleSelect('recruiter')}
+                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
+                        role === 'recruiter'
+                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
+                      }`}
+                    >
+                      <Briefcase className="w-4 h-4" />
+                      <span className="text-xs">Recruiter</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRoleSelect('admin')}
+                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
+                        role === 'admin'
+                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
+                      }`}
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span className="text-xs">Admin</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Status/Error Messages */}
+              {message && (
+                <div
+                  className={`mb-4 p-3 rounded-lg border text-xs font-medium flex items-start gap-2 ${
+                    messageType === 'error'
+                      ? 'bg-rose-50 border-rose-200 text-rose-700'
+                      : messageType === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
                 >
-                  Create free account
-                </button>
-              </p>
-            ) : (
-              <p>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => setMode('login')}
-                  className="font-bold text-[#3525CD] hover:underline"
-                >
-                  Sign in here
-                </button>
-              </p>
-            )}
-          </div>
-          </>}
+                  {messageType === 'error' ? (
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  )}
+                  <span>{message}</span>
+                </div>
+              )}
+
+              {/* Google Sign-In Button */}
+              {mode === 'login' && role !== 'admin' && (
+                <div className="mb-5">
+                  <button
+                    type="button"
+                    onClick={handleGoogleAuth}
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-slate-300 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span>Sign in with Google ({role === 'candidate' ? 'Candidate' : 'Recruiter'})</span>
+                  </button>
+
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-white px-2 text-slate-400 font-medium">Or continue with email</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <form className="space-y-3" onSubmit={handleSubmit}>
+                {mode === 'register' && (
+                  <div>
+                    <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                      Full Name
+                    </label>
+                    <div className="mt-1 relative">
+                      <User className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. Rahul Mehta"
+                        className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {mode === 'register' && role === 'recruiter' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                        Company Name
+                      </label>
+                      <div className="mt-1 relative">
+                        <Building className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          required
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          placeholder="e.g. Acme Innovations Inc."
+                          className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#4F46E5]/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                        Company Website
+                      </label>
+                      <div className="mt-1 relative">
+                        <Globe className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="url"
+                          required
+                          value={organizationWebsite}
+                          onChange={(e) => setOrganizationWebsite(e.target.value)}
+                          placeholder="https://company.example.com"
+                          className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#4F46E5]/20"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                    Email Address
+                  </label>
+                  <div className="mt-1 relative">
+                    <Mail className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder={role === 'admin' ? 'admin@hiremind.ai' : 'name@example.com'}
+                      className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
+                    />
+                  </div>
+                </div>
+
+                {mode !== 'forgot' && (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                        Password
+                      </label>
+                      {mode === 'login' && (
+                        <button
+                          type="button"
+                          onClick={() => setMode('forgot')}
+                          className="text-xs font-semibold text-[#3525CD] hover:underline cursor-pointer"
+                        >
+                          Forgot?
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-1 relative">
+                      <Lock className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {mode === 'register' && (
+                  <div>
+                    <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
+                      Confirm Password
+                    </label>
+                    <div className="mt-1 relative">
+                      <Lock className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full mt-2 py-2.5 rounded-xl bg-[#0F766E] text-white text-xs font-bold shadow-xs hover:bg-[#115E59] disabled:bg-[#94A3B8] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {loading ? (
+                      <span>Processing...</span>
+                    ) : (
+                      <>
+                        <span>
+                          {mode === 'login' && `Continue as ${role === 'admin' ? 'Admin' : role === 'candidate' ? 'Candidate' : 'Recruiter'}`}
+                          {mode === 'register' && (role === 'recruiter' ? 'Submit Company Application' : 'Create Candidate Account')}
+                          {mode === 'forgot' && 'Send Reset Instructions'}
+                        </span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* Switch Mode Links */}
+              {role !== 'admin' && (
+                <div className="mt-5 pt-4 border-t border-[#E5E7EB] text-center text-xs text-[#464555]">
+                  {mode === 'login' ? (
+                    <p>
+                      Don't have an account yet?{' '}
+                      <button
+                        type="button"
+                        onClick={() => setMode('register')}
+                        className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                      >
+                        Register here
+                      </button>
+                    </p>
+                  ) : (
+                    <p>
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => setMode('login')}
+                        className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                      >
+                        Sign in here
+                      </button>
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -16,6 +16,8 @@ import {
   Search,
   Bot,
   UserCheck,
+  GraduationCap,
+  ShieldCheck,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -61,6 +63,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Search
     },
     {
+      id: 'internships',
+      label: 'Internships',
+      icon: GraduationCap,
+      badge: 'New'
+    },
+    {
       id: 'ai-interview',
       label: 'AI Interview',
       icon: Video,
@@ -92,8 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'candidates-list',
       label: 'Candidates',
-      icon: Users,
-      count: '156'
+      icon: Users
     },
     {
       id: 'candidate-details',
@@ -110,6 +117,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'jobs-management',
       label: 'Job Postings',
       icon: Briefcase
+    },
+    {
+      id: 'internships-management',
+      label: 'Internships',
+      icon: GraduationCap,
+      badge: 'Active'
     },
     {
       id: 'resume-screening',
@@ -134,10 +147,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   ];
 
+  const adminNavItems: NavigationItem[] = [
+    {
+      id: 'admin-dashboard',
+      label: 'Admin Verification',
+      icon: ShieldCheck
+    },
+    {
+      id: 'candidates-list',
+      label: 'Candidates',
+      icon: Users
+    },
+    {
+      id: 'jobs-management',
+      label: 'Platform Jobs',
+      icon: Briefcase
+    },
+    {
+      id: 'internships-management',
+      label: 'Platform Internships',
+      icon: GraduationCap
+    },
+    {
+      id: 'analytics',
+      label: 'Platform Analytics',
+      icon: BarChart3
+    }
+  ];
+
   const navItems: NavigationItem[] =
-    role === 'candidate'
-      ? candidateNavItems
-      : recruiterNavItems;
+    role === 'admin'
+      ? adminNavItems
+      : role === 'recruiter'
+      ? recruiterNavItems
+      : candidateNavItems;
 
   const handleNav = (id: string) => {
     onNavigate(id);

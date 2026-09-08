@@ -17,6 +17,7 @@ export interface UserProfile {
   githubUrl?: string;
   portfolioUrl?: string;
   organizationWebsite?: string;
+  company?: Company;
 
   // Profile insights
   matchScore?: number;
@@ -405,4 +406,82 @@ export interface NotificationItem {
 
   actionUrl?: string;
   actionLabel?: string;
+}
+
+export interface Company {
+  id: string;
+  recruiterId: string;
+  name: string;
+  website: string;
+  logo?: string;
+  industry?: string;
+  description?: string;
+  address?: string;
+  location?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  companySize?: string;
+  foundedYear?: number;
+  linkedinUrl?: string;
+  verificationStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+  verificationDocuments?: any;
+  rejectionReason?: string;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Internship {
+  id: string;
+  recruiterId: string;
+  companyId: string;
+  company?: {
+    id?: string;
+    name: string;
+    logo?: string;
+    website?: string;
+    location?: string;
+  };
+  title: string;
+  department: string;
+  description: string;
+  skills: string[];
+  eligibility?: string;
+  location: string;
+  mode: string;
+  duration: string;
+  stipend?: string;
+  startDate?: string;
+  openings: number;
+  deadline?: string;
+  status: 'ACTIVE' | 'CLOSED' | 'DRAFT';
+  applicantCount: number;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ApplicationType = 'JOB' | 'INTERNSHIP';
+
+export interface AdminStats {
+  totalCandidates: number;
+  totalRecruiters: number;
+  pendingCompanies: number;
+  approvedCompanies: number;
+  rejectedCompanies: number;
+  activeJobs: number;
+  activeInternships: number;
+  totalApplications: number;
+  totalInterviews: number;
+}
+
+export interface JobMatchItem {
+  id: string;
+  title: string;
+  type: 'JOB' | 'INTERNSHIP';
+  company: string;
+  location: string;
+  department: string;
+  requiredSkills: string[];
+  matchScore: number;
 }

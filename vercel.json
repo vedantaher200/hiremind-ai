@@ -2,8 +2,16 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/api/ai",
+      "destination": "/api/ai"
+    },
+    {
+      "source": "/api/admin-setup",
+      "destination": "/api/admin-setup"
+    },
+    {
       "source": "/api/(.*)",
-      "destination": "/api"
+      "destination": "/api/index.ts"
     },
     {
       "source": "/(.*)",

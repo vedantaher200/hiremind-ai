@@ -2,28 +2,37 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const uploadDir = process.env.UPLOAD_DIR || (isServerless ? path.join('/tmp', 'uploads') : './uploads');
 
 // Ensure upload subdirectories exist
 const resumeDir = path.join(uploadDir, 'resumes');
 const documentDir = path.join(uploadDir, 'documents');
 const avatarDir = path.join(uploadDir, 'avatars');
 
-[uploadDir, resumeDir, documentDir, avatarDir].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+const ensureDir = (dir: string) => {
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (err) {
+    // In serverless environments, log but don't crash module initialization
+    console.warn(`[UPLOAD] Notice: Directory could not be created during startup: ${dir}`, err);
   }
-});
+};
+
+[uploadDir, resumeDir, documentDir, avatarDir].forEach(ensureDir);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    let targetDir = avatarDir;
     if (file.fieldname === 'resume') {
-      cb(null, resumeDir);
+      targetDir = resumeDir;
     } else if (file.fieldname === 'document' || file.fieldname === 'verificationDocuments') {
-      cb(null, documentDir);
-    } else {
-      cb(null, avatarDir);
+      targetDir = documentDir;
     }
+    ensureDir(targetDir);
+    cb(null, targetDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);

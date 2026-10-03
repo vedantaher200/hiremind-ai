@@ -1,11 +1,7 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useState
-} from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { UserProfile, UserRole } from '../types';
 import { api, getToken, setToken, clearToken } from '../lib/api';
+import { STORAGE_KEYS, getStoredItem, setStoredItem } from '../lib/supabase';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -13,12 +9,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
 
-  login: (
-    email: string,
-    password: string,
-    expectedRole?: UserRole
-  ) => Promise<UserProfile>;
-
+  login: (email: string, password: string, expectedRole?: UserRole) => Promise<UserProfile>;
   signup: (
     name: string,
     email: string,
@@ -27,13 +18,8 @@ interface AuthContextType {
     organizationWebsite?: string,
     companyName?: string,
     setupKey?: string
-  ) => Promise<{ status: 'signed_in' | 'pending_approval' | 'created'; user?: UserProfile }>;
-
-  loginWithGoogle: (
-    credential: string,
-    role?: UserRole
-  ) => Promise<UserProfile>;
-
+  ) => Promise<{ status: 'signed_in' | 'confirmation_required' | 'pending_approval' | 'created'; user?: UserProfile }>;
+  loginWithGoogle: (credential: string, role?: UserRole) => Promise<UserProfile>;
   resetPassword: (email: string) => Promise<void>;
   resendConfirmation: (email: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -43,36 +29,37 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper to map backend user object to UserProfile interface
 const mapUserResponse = (data: any, fallbackRole?: UserRole): UserProfile => {
-  const rawRole = (data.role || fallbackRole || '').toLowerCase();
-  if (rawRole !== 'admin' && rawRole !== 'recruiter' && rawRole !== 'candidate') {
-    throw new Error(`Invalid or missing user role: "${data.role}"`);
+  const rawRole = (data.role || fallbackRole || 'candidate').toLowerCase();
+  let role: UserRole = 'candidate';
+  if (rawRole === 'admin' || rawRole === 'recruiter' || rawRole === 'candidate') {
+    role = rawRole as UserRole;
   }
-  const role: UserRole = rawRole as UserRole;
 
   return {
     id: data.id,
-    name: data.name || 'User',
+    name: data.full_name || data.name || 'User',
     email: data.email || '',
     role,
-    avatar: data.avatar || undefined,
+    avatar: data.avatar_url || data.avatar || undefined,
     title: data.title || undefined,
     location: data.location || undefined,
     phone: data.phone || undefined,
     bio: data.bio || undefined,
-    linkedinUrl: data.linkedinUrl || undefined,
-    githubUrl: data.githubUrl || undefined,
-    portfolioUrl: data.portfolioUrl || undefined,
-    organizationWebsite: data.company?.website || data.organizationWebsite || undefined,
+    linkedinUrl: data.linkedin_url || data.linkedinUrl || undefined,
+    githubUrl: data.github_url || data.githubUrl || undefined,
+    portfolioUrl: data.portfolio_url || data.portfolioUrl || undefined,
+    organizationWebsite: data.organization_website || data.organizationWebsite || undefined,
     company: data.company,
     skills: Array.isArray(data.skills) ? data.skills : [],
     experience: Array.isArray(data.experience) ? data.experience : [],
     education: Array.isArray(data.education) ? data.education : [],
-    createdAt: data.createdAt || new Date().toISOString(),
-    matchScore: data.matchScore || 85,
-    profileCompletion: data.profileCompletion || 70,
-    availabilityStatus: data.availabilityStatus || 'Available',
-    yearsOfExperience: data.yearsOfExperience || 2
+    createdAt: data.created_at || data.createdAt || new Date().toISOString(),
+    matchScore: data.match_score || data.matchScore || 85,
+    profileCompletion: data.profile_completion || data.profileCompletion || 70,
+    availabilityStatus: data.availability_status || data.availabilityStatus || 'Available',
+    yearsOfExperience: data.years_of_experience || data.yearsOfExperience || 2
   };
 };
 
@@ -80,53 +67,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Restore authenticated session on mount
+  // Session restoration on application startup
   useEffect(() => {
-    const restoreSession = async () => {
-      const token = getToken();
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
+    let isMounted = true;
 
+    const restoreSession = async () => {
       try {
-        const profile = await api.auth.me();
-        if (profile && profile.id) {
-          setUser(mapUserResponse(profile));
+        const token = getToken();
+        if (token) {
+          try {
+            const data = await api.auth.me();
+            if (isMounted && data) {
+              const mapped = mapUserResponse(data);
+              setUser(mapped);
+              setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+            }
+          } catch (err) {
+            console.warn('[AUTH] Token invalid or expired, clearing session:', err);
+            clearToken();
+            localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+            if (isMounted) setUser(null);
+          }
         } else {
-          clearToken();
-          setUser(null);
+          // Local storage session fallback for offline/demo
+          const storedUser = getStoredItem<UserProfile | null>(STORAGE_KEYS.AUTH_USER, null);
+          if (storedUser && isMounted) {
+            setUser(storedUser);
+          }
         }
       } catch (err) {
-        console.warn('Session restoration failed:', err);
-        clearToken();
-        setUser(null);
+        console.warn('[AUTH] Session restoration warning:', err);
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     restoreSession();
+    return () => { isMounted = false; };
   }, []);
 
+  /* ---------------- LOGIN FLOW ---------------- */
   const login = async (
     email: string,
     password: string,
     expectedRole?: UserRole
   ): Promise<UserProfile> => {
+    setIsLoading(true);
     try {
-      const res = await api.auth.login(email, password, expectedRole);
-      setToken(res.token);
-      const mapped = mapUserResponse(res.user, expectedRole);
+      const data = await api.auth.login(email, password, expectedRole);
+      
+      if (data.token) setToken(data.token);
+      
+      const mapped = mapUserResponse(data.user, expectedRole);
       setUser(mapped);
+      setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+      
+      setIsLoading(false);
       return mapped;
     } catch (err: any) {
-      clearToken();
-      setUser(null);
+      setIsLoading(false);
       throw err;
     }
   };
 
+  /* ---------------- REGISTRATION FLOW ---------------- */
   const signup = async (
     name: string,
     email: string,
@@ -135,83 +141,123 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     organizationWebsite?: string,
     companyName?: string,
     setupKey?: string
-  ): Promise<{ status: 'signed_in' | 'pending_approval' | 'created'; user?: UserProfile }> => {
+  ): Promise<{ status: 'signed_in' | 'confirmation_required' | 'pending_approval' | 'created'; user?: UserProfile }> => {
+    setIsLoading(true);
+    
     try {
+      if (role === 'admin') {
+        await api.auth.registerAdmin({ name, email, password, setupKey });
+        setIsLoading(false);
+        return { status: 'created' };
+      } 
+      
       if (role === 'recruiter') {
+        if (!companyName || !organizationWebsite) {
+          throw new Error('Company name and website are required for recruiters.');
+        }
         await api.auth.registerRecruiter({
-          name,
-          email,
-          password,
-          companyName: companyName || `${name}'s Company`,
-          companyWebsite: organizationWebsite || 'https://example.com'
+          name, email, password, companyName, companyWebsite: organizationWebsite
         });
+        setIsLoading(false);
         return { status: 'pending_approval' };
-      } else if (role === 'admin') {
-        const res = await api.auth.registerAdmin({
-          name,
-          email,
-          password,
-          setupKey: setupKey || organizationWebsite
-        });
-        const mappedAdmin = res.user ? mapUserResponse(res.user, 'admin') : undefined;
-        return { status: 'created', user: mappedAdmin };
-      } else {
-        const res = await api.auth.registerCandidate({ name, email, password });
-        setToken(res.token);
-        const mapped = mapUserResponse(res.user, 'candidate');
-        setUser(mapped);
-        return { status: 'signed_in', user: mapped };
       }
+      
+      // Candidate registration
+      const data = await api.auth.registerCandidate({ name, email, password });
+      
+      if (data.token) setToken(data.token);
+      
+      const mapped = mapUserResponse(data.user, role);
+      setUser(mapped);
+      setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+      
+      setIsLoading(false);
+      return { status: 'signed_in', user: mapped };
+      
     } catch (err: any) {
+      setIsLoading(false);
       throw err;
     }
   };
 
-  const loginWithGoogle = async (credential: string, role: UserRole = 'candidate'): Promise<UserProfile> => {
+  /* ---------------- GOOGLE AUTH ---------------- */
+  const loginWithGoogle = async (credential: string, targetRole: UserRole = 'candidate'): Promise<UserProfile> => {
+    setIsLoading(true);
     try {
-      const res = await api.auth.google(credential, role.toUpperCase());
-      setToken(res.token);
-      const mapped = mapUserResponse(res.user, role);
+      const data = await api.auth.google(credential, targetRole);
+      if (data.token) setToken(data.token);
+      
+      const mapped = mapUserResponse(data.user, targetRole);
       setUser(mapped);
+      setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+      
+      setIsLoading(false);
       return mapped;
     } catch (err: any) {
       clearToken();
       setUser(null);
+      setIsLoading(false);
       throw err;
     }
   };
 
+  /* ---------------- LOGOUT ---------------- */
   const logout = async () => {
     clearToken();
     setUser(null);
+    localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
   };
 
+  /* ---------------- UPDATE PROFILE ---------------- */
   const updateProfile = async (updates: Partial<UserProfile>) => {
-    if (!user) return;
+    if (!user) throw new Error('You must be signed in to update your profile.');
+    
     try {
-      const res = await api.auth.updateProfile(updates);
-      setUser(mapUserResponse(res.user, user.role));
-    } catch (err: any) {
+      const dbUpdates: Record<string, any> = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+      if (updates.location !== undefined) dbUpdates.location = updates.location;
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+      if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar;
+      if (updates.linkedinUrl !== undefined) dbUpdates.linkedinUrl = updates.linkedinUrl;
+      if (updates.githubUrl !== undefined) dbUpdates.githubUrl = updates.githubUrl;
+      if (updates.portfolioUrl !== undefined) dbUpdates.portfolioUrl = updates.portfolioUrl;
+      if (updates.organizationWebsite !== undefined) dbUpdates.organizationWebsite = updates.organizationWebsite;
+      if (updates.skills !== undefined) dbUpdates.skills = updates.skills;
+      if (updates.experience !== undefined) dbUpdates.experience = updates.experience;
+      if (updates.education !== undefined) dbUpdates.education = updates.education;
+
+      const data = await api.auth.updateProfile(dbUpdates);
+      const mapped = mapUserResponse(data.user, user.role);
+      
+      setUser(mapped);
+      setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+    } catch (err) {
+      console.warn('[AUTH] Database profile update notice:', err);
       throw err;
     }
   };
 
+  /* ---------------- UPLOAD AVATAR ---------------- */
   const uploadAvatar = async (file: File) => {
+    if (!user) throw new Error('You must be signed in to upload an avatar.');
     try {
-      const res = await api.auth.uploadAvatar(file);
-      if (res?.avatar) {
-        setUser((prev) => (prev ? { ...prev, avatar: res.avatar } : null));
-      }
-    } catch (err: any) {
-      console.error('Failed to upload avatar:', err);
+      const data = await api.auth.uploadAvatar(file);
+      const mapped = mapUserResponse(data.user, user.role);
+      setUser(mapped);
+      setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
+    } catch (err) {
       throw err;
     }
   };
 
+  /* ---------------- PASSWORD RESET ---------------- */
   const resetPassword = async (email: string) => {
     await api.auth.forgotPassword(email);
   };
 
+  /* ---------------- RESEND VERIFICATION EMAIL ---------------- */
   const resendConfirmation = async (email: string) => {
     await api.auth.resendVerification(email);
   };

@@ -70,21 +70,63 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setLoading(true);
     setMessage(null);
 
-    if (mode === 'register' && password !== confirmPassword) {
-      setLoading(false);
-      setMessageType('error');
-      setMessage('Passwords do not match. Please verify.');
-      return;
+    const cleanEmail = email.trim();
+    const cleanName = name.trim();
+
+    if (mode === 'register') {
+      if (!cleanName || cleanName.length < 2) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Please enter your full name (minimum 2 characters).');
+        return;
+      }
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Please enter a valid email address.');
+        return;
+      }
+      if (password.length < 8) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Password must be at least 8 characters long.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Passwords do not match. Please verify.');
+        return;
+      }
+      if (role === 'recruiter' && organizationWebsite && !/^https?:\/\/[^\s]+$/i.test(organizationWebsite)) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Please enter a valid organization website (e.g. https://example.com).');
+        return;
+      }
+    } else if (mode === 'login') {
+      if (!cleanEmail || !password) {
+        setLoading(false);
+        setMessageType('error');
+        setMessage('Email and password are required.');
+        return;
+      }
     }
 
     try {
       if (mode === 'login') {
-        const loggedInUser = await login(email, password, role);
+        const loggedInUser = await login(cleanEmail, password, role);
         setLoading(false);
         onSuccess(loggedInUser);
       } else if (mode === 'register') {
-        const result = await signup(name, email, password, role, organizationWebsite, companyName, adminSetupKey);
+        const result = await signup(cleanName, cleanEmail, password, role, organizationWebsite, companyName, adminSetupKey);
         setLoading(false);
+        if (result.status === 'confirmation_required') {
+          switchMode('login');
+          setMessageType('info');
+          setMessage('Registration successful! Please check your email to verify your account before signing in.');
+          return;
+        }
         if (result.status === 'pending_approval') {
           setPendingApproval(true);
           return;
@@ -101,7 +143,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           setMessage('Account created successfully! Please sign in with your credentials.');
         }
       } else {
-        await resetPassword(email);
+        await resetPassword(cleanEmail);
         setMessageType('success');
         setMessage('If an account exists with this email, password reset instructions have been dispatched.');
         setLoading(false);
@@ -113,10 +155,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setMessage('Your company registration is currently pending Admin review. Please wait for approval before logging in.');
       } else if (err?.code === 'COMPANY_REJECTED') {
         setMessage(`Company verification was rejected. Reason: ${err.rejectionReason || 'Eligibility criteria not met'}`);
-      } else if (err?.code === 'ROLE_MISMATCH') {
+      } else if (err?.code === 'ROLE_MISMATCH' || err?.message?.includes('credentials belong to')) {
         setMessage(err.message || 'Account role mismatch. Please select the correct tab.');
+      } else if (err?.message?.includes('verify your email')) {
+        setMessage('Please verify your email before signing in.');
+      } else if (err?.message?.includes('Invalid email or password')) {
+        setMessage('Invalid email or password.');
       } else {
-        setMessage(err?.message || 'Authentication error occurred. Please check your details.');
+        setMessage(err?.message || 'Authentication error occurred. Please try again.');
       }
     }
   };
@@ -159,7 +205,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         {/* Back button */}
         <button
           onClick={onBackToLanding}
-          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-stone-600 hover:text-orange-700 transition-colors cursor-pointer"
+          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-stone-600 hover:text-[#0F766E] transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
@@ -167,11 +213,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
         {/* Brand Logo */}
         <div className="flex items-center justify-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-orange-700 flex items-center justify-center shadow-sm">
+          <div className="w-11 h-11 rounded-xl bg-[#0F766E] flex items-center justify-center shadow-sm shadow-teal-900/15">
             <Bot className="w-6 h-6 text-white" />
           </div>
           <span className="font-extrabold text-2xl text-[#191C1D] tracking-tight">
-            HireMind <span className="text-orange-700 font-bold text-sm">AI</span>
+            HireMind <span className="text-[#0F766E] font-bold text-sm">AI</span>
           </span>
         </div>
 
@@ -207,7 +253,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   setMode('login');
                   setMessage(null);
                 }}
-                className="w-full py-2.5 rounded-lg bg-orange-700 hover:bg-orange-800 text-white text-sm font-semibold transition-colors cursor-pointer"
+                className="w-full py-2.5 rounded-xl bg-[#0F766E] hover:bg-[#115E59] text-white text-sm font-semibold transition-colors cursor-pointer"
               >
                 Back to Sign In
               </button>
@@ -256,7 +302,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       onClick={() => handleRoleSelect('candidate')}
                       className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
                         role === 'candidate'
-                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          ? 'border-[#0F766E] bg-[#E6F4F1] text-[#0F766E] font-bold'
                           : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
                       }`}
                     >
@@ -269,7 +315,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       onClick={() => handleRoleSelect('recruiter')}
                       className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
                         role === 'recruiter'
-                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          ? 'border-[#0F766E] bg-[#E6F4F1] text-[#0F766E] font-bold'
                           : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
                       }`}
                     >
@@ -282,7 +328,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       onClick={() => handleRoleSelect('admin')}
                       className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 text-center transition-all cursor-pointer ${
                         role === 'admin'
-                          ? 'border-[#3525CD] bg-indigo-50/60 text-[#3525CD] font-bold'
+                          ? 'border-[#0F766E] bg-[#E6F4F1] text-[#0F766E] font-bold'
                           : 'border-[#E5E7EB] hover:bg-[#F8F9FA] text-[#464555]'
                       }`}
                     >
@@ -535,7 +581,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     <button
                       type="button"
                       onClick={() => switchMode('register')}
-                      className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                      className="font-bold text-[#0F766E] hover:underline cursor-pointer"
                     >
                       {role === 'admin' ? 'Provision with Setup Key' : 'Register here'}
                     </button>
@@ -546,7 +592,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     <button
                       type="button"
                       onClick={() => switchMode('login')}
-                      className="font-bold text-[#3525CD] hover:underline cursor-pointer"
+                      className="font-bold text-[#0F766E] hover:underline cursor-pointer"
                     >
                       Sign in here
                     </button>

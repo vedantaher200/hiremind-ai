@@ -41,7 +41,21 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    const error: any = new Error(data.error || `HTTP error ${res.status}`);
+    console.error(`[API ERROR ${res.status}] ${endpoint}:`, data);
+    let fallbackMsg = 'Something went wrong while processing your request. Please try again.';
+    if (res.status === 500) {
+      fallbackMsg = 'Something went wrong while processing your request. Please try again.';
+    } else if (res.status === 503) {
+      fallbackMsg = 'Service is temporarily unavailable. Please try again in a few moments.';
+    } else if (res.status === 404) {
+      fallbackMsg = 'Requested service endpoint was not found.';
+    } else if (res.status === 401) {
+      fallbackMsg = 'Authentication required. Please check your credentials.';
+    } else if (res.status === 403) {
+      fallbackMsg = 'Access denied. Please check your permissions.';
+    }
+
+    const error: any = new Error(data.error || fallbackMsg);
     error.status = res.status;
     error.code = data.code;
     error.rejectionReason = data.rejectionReason;

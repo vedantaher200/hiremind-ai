@@ -437,10 +437,10 @@ export const CandidateProfilePage: React.FC<CandidateProfilePageProps> = () => {
           </div>
 
           {/* EXPERIENCE */}
-          <div className="bg-white p-6 rounded-3xl border border-[#E5E7EB] shadow-[0_10px_30px_-5px_rgba(79,70,229,0.04)]">
+          <div className="bg-white p-6 rounded-3xl border border-[#E5E7EB] shadow-[0_10px_30px_-5px_rgba(15,118,110,0.04)]">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center">
-                <Briefcase className="w-5 h-5 text-orange-600" />
+              <div className="w-10 h-10 rounded-xl bg-[#E6F4F1] flex items-center justify-center">
+                <Briefcase className="w-5 h-5 text-[#0F766E]" />
               </div>
 
               <div>

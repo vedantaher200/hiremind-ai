@@ -19,6 +19,16 @@ const generateToken = (user: { id: string; email: string; role: Role }) => {
   });
 };
 
+const formatAuthError = (err: any, defaultMsg: string) => {
+  if (err?.code === 'P2002') {
+    return { status: 400, message: 'An account with this email already exists.' };
+  }
+  if (err?.code === 'P1001' || err?.code === 'P1000' || err?.message?.includes("Can't reach database server")) {
+    return { status: 503, message: 'Database service is currently unreachable. Please check database configuration.' };
+  }
+  return { status: 500, message: defaultMsg };
+};
+
 /* ---------------- CANDIDATE REGISTRATION ---------------- */
 router.post('/register-candidate', async (req: Request, res: Response) => {
   try {
@@ -64,8 +74,9 @@ router.post('/register-candidate', async (req: Request, res: Response) => {
       }
     });
   } catch (err: any) {
-    console.error('Candidate registration error:', err);
-    res.status(500).json({ error: err.message || 'Registration failed.' });
+    console.error('[AUTH ERROR] Candidate registration:', err);
+    const formatted = formatAuthError(err, 'Registration failed. Please try again.');
+    res.status(formatted.status).json({ error: formatted.message });
   }
 });
 
@@ -291,7 +302,8 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('Login error:', err);
-    res.status(500).json({ error: err.message || 'Login failed.' });
+    const formatted = formatAuthError(err, 'Login failed. Please try again.');
+    res.status(formatted.status).json({ error: formatted.message });
   }
 });
 
@@ -341,48 +353,26 @@ router.post('/google', async (req: Request, res: Response) => {
 
     let googlePayload: { email: string; name: string; sub: string; picture?: string };
 
-    // If GOOGLE_CLIENT_ID is configured, verify with Google
-    if (googleClient && GOOGLE_CLIENT_ID) {
-      const ticket = await googleClient.verifyIdToken({
-        idToken: credential,
-        audience: GOOGLE_CLIENT_ID
+    if (!googleClient || !GOOGLE_CLIENT_ID) {
+      return res.status(503).json({
+        error: 'Google Sign-In is not configured on this server. Please sign in with email and password.'
       });
-      const payload = ticket.getPayload();
-      if (!payload || !payload.email) {
-        return res.status(401).json({ error: 'Invalid Google authentication token.' });
-      }
-      googlePayload = {
-        email: payload.email,
-        name: payload.name || 'Google User',
-        sub: payload.sub,
-        picture: payload.picture
-      };
-    } else {
-      // Decode JWT payload directly (for dev testing without Google Client ID)
-      try {
-        const decoded = jwt.decode(credential) as any;
-        if (decoded && decoded.email) {
-          googlePayload = {
-            email: decoded.email,
-            name: decoded.name || 'Google User',
-            sub: decoded.sub || 'google-' + Date.now(),
-            picture: decoded.picture
-          };
-        } else {
-          googlePayload = {
-            email: 'google.candidate@example.com',
-            name: 'Google Candidate',
-            sub: 'google-dev-12345'
-          };
-        }
-      } catch {
-        googlePayload = {
-          email: 'google.candidate@example.com',
-          name: 'Google Candidate',
-          sub: 'google-dev-12345'
-        };
-      }
     }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(401).json({ error: 'Invalid or unverified Google authentication token.' });
+    }
+    googlePayload = {
+      email: payload.email,
+      name: payload.name || 'Google User',
+      sub: payload.sub,
+      picture: payload.picture
+    };
 
     const cleanEmail = googlePayload.email.trim().toLowerCase();
     let user = await prisma.user.findUnique({

@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
           <input
             type="text"
             placeholder="Search candidates, roles, skills, or metrics..."
-            className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] transition-all"
+            className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-sm text-[#191C1D] placeholder:text-[#8E8EA0] focus:outline-none focus:ring-2 focus:ring-[#0F766E]/20 focus:border-[#0F766E] transition-all"
           />
         </div>
       </div>
@@ -74,19 +74,19 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
             <Bell className="w-5 h-5" />
 
             {unreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-[#4F46E5] rounded-full ring-2 ring-white" />
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-[#0F766E] rounded-full ring-2 ring-white" />
             )}
           </button>
 
           {showNotifs && (
-            <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-[0_10px_30px_-5px_rgba(79,70,229,0.12)] border border-[#E5E7EB] py-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-[0_10px_30px_-5px_rgba(15,118,110,0.12)] border border-[#E5E7EB] py-3 z-50 animate-in fade-in zoom-in-95 duration-150">
               
               <div className="px-4 pb-2 border-b border-[#E5E7EB] flex items-center justify-between">
                 <span className="font-semibold text-sm text-[#191C1D]">
                   Notifications
                 </span>
 
-                <span className="text-xs text-[#4F46E5] font-medium">
+                <span className="text-xs text-[#0F766E] font-medium">
                   {unreadCount} new
                 </span>
               </div>
@@ -97,11 +97,11 @@ export const Header: React.FC<HeaderProps> = ({ onNavigate, onToggleSidebar }) =
                     key={n.id}
                     onClick={() => markNotificationAsRead(n.id)}
                     className={`p-3 hover:bg-[#F8F9FA] cursor-pointer transition-colors ${
-                      !n.read ? 'bg-indigo-50/40' : ''
+                      !n.read ? 'bg-teal-50/60' : ''
                     }`}
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className="w-2 h-2 mt-1.5 rounded-full bg-[#4F46E5] shrink-0" />
+                      <div className="w-2 h-2 mt-1.5 rounded-full bg-[#0F766E] shrink-0" />
 
                       <div>
                         <p className="text-xs font-semibold text-[#191C1D]">

@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
-import pdfParse from 'pdf-parse';
 import { GoogleGenAI } from '@google/genai';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -28,8 +27,20 @@ router.post(
       if (req.file.mimetype === 'application/pdf') {
         try {
           const dataBuffer = fs.readFileSync(filePath);
-          const pdfData = await pdfParse(dataBuffer);
-          extractedText = pdfData.text || '';
+          const pdfParseModule = await import('pdf-parse');
+          
+          if ((pdfParseModule as any).PDFParse) {
+             // pdf-parse version 2.4.5 API (Vercel production)
+             const PDFParse = (pdfParseModule as any).PDFParse;
+             const parser = new PDFParse({ data: dataBuffer });
+             const pdfData = await parser.getText();
+             extractedText = pdfData.text || '';
+          } else {
+             // pdf-parse version 1.1.1 API (Local development)
+             const pdfParseFn = (pdfParseModule as any).default || pdfParseModule;
+             const pdfData = await pdfParseFn(dataBuffer);
+             extractedText = pdfData.text || '';
+          }
         } catch (pdfErr) {
           console.warn('PDF text extraction fallback:', pdfErr);
         }

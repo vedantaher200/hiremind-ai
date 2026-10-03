@@ -4,7 +4,8 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 enum Role {
@@ -82,6 +83,8 @@ model User {
   recruiterInterviews ScheduledInterview[] @relation("RecruiterInterviews")
   feedbackGiven       Feedback[]   @relation("CandidateFeedback")
   auditLogs           AuditLog[]
+  jdAnalyses          JobDescriptionAnalysis[] @relation("RecruiterJDAnalyses")
+  candidateMatches    CandidateMatch[] @relation("CandidateMatches")
 
   @@index([email])
   @@index([role])
@@ -307,6 +310,7 @@ model ScheduledInterview {
   interviewType       String         @default("Technical")
   mode                String         @default("Virtual (Google Meet)")
   meetingLink         String?
+  googleEventId       String?        // New field for Google Calendar Event ID
   notes               String?
   status              String         @default("Scheduled")
   createdAt           DateTime       @default(now())
@@ -361,4 +365,58 @@ model AuditLog {
 
   @@index([action])
   @@index([entityType])
+}
+
+model JobDescriptionAnalysis {
+  id                  String         @id @default(uuid())
+  recruiterId         String
+  recruiter           User           @relation("RecruiterJDAnalyses", fields: [recruiterId], references: [id], onDelete: Cascade)
+  originalText        String         @db.Text
+  mandatorySkills     String[]       @default([])
+  preferredSkills     String[]       @default([])
+  educationReq        String?
+  experienceReq       String?
+  locationReq         String?
+  responsibilities    String[]       @default([])
+  certifications      String[]       @default([])
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  matches             CandidateMatch[]
+
+  @@index([recruiterId])
+}
+
+model CandidateMatch {
+  id                  String         @id @default(uuid())
+  jdAnalysisId        String
+  jdAnalysis          JobDescriptionAnalysis @relation(fields: [jdAnalysisId], references: [id], onDelete: Cascade)
+  candidateId         String
+  candidate           User           @relation("CandidateMatches", fields: [candidateId], references: [id], onDelete: Cascade)
+  overallScore        Float
+  evidenceConfidence  Float
+  requirementScores   Json           // Breakdown of requirement matching
+  hiddenSkills        Json?          // Array of inferred skills with evidence
+  missingEvidence     String[]       @default([])
+  explanation         String         @db.Text
+  isSimulation        Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([jdAnalysisId])
+  @@index([candidateId])
+}
+
+model RecruitmentOutcome {
+  id                  String         @id @default(uuid())
+  candidateId         String
+  recruiterId         String
+  jobId               String?
+  outcomeStatus       String         // e.g. "Hired", "Rejected", "Interview Scheduled"
+  notes               String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([candidateId])
+  @@index([recruiterId])
 }

@@ -290,7 +290,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     font-medium transition-all group
                     ${
                       isActive
-                        ? 'bg-[#EEF2FF] text-[#3525CD] font-semibold shadow-sm'
+                        ? 'bg-[#E6F4F1] text-[#0F766E] font-semibold shadow-xs border border-[#B9DFD8]/60'
                         : 'text-[#464555] hover:bg-[#F8F9FA] hover:text-[#191C1D]'
                     }
                   `}
@@ -301,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         w-4 h-4 transition-colors
                         ${
                           isActive
-                            ? 'text-[#3525CD]'
+                            ? 'text-[#0F766E]'
                             : 'text-[#737380] group-hover:text-[#191C1D]'
                         }
                       `}

@@ -33,6 +33,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "google-auth-library": "^11.0.2",
+    "googleapis": "^183.0.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -43,6 +44,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
+    "uuid": "^14.0.2",
     "vite": "^6.2.3"
   },
   "devDependencies": {
@@ -55,5 +57,8 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "prisma": {
+    "schema": "server/prisma/schema.prisma"
   }
 }

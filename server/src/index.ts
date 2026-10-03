@@ -5,6 +5,7 @@ import path from 'path';
 
 dotenv.config();
 
+import { prisma } from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import companyRoutes from './routes/companies.js';
@@ -25,17 +26,18 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
+  'https://hiremind-ai-pearl.vercel.app',
   process.env.CLIENT_URL || ''
 ].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (like mobile apps or curl)
-      if (!origin || allowedOrigins.includes(origin)) {
+      // allow requests with no origin (like mobile apps, curl, or same-origin)
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
         callback(null, true);
       } else {
-        callback(null, true); // Permissive in dev mode for smooth testing
+        callback(null, true);
       }
     },
     credentials: true,
@@ -48,19 +50,33 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Static file serving for uploads (resumes, documents, avatars)
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-app.use('/uploads', express.static(path.resolve(uploadDir)));
+const uploadDir = process.env.UPLOAD_DIR || (process.env.VERCEL ? path.join('/tmp', 'uploads') : './uploads');
+try {
+  app.use('/uploads', express.static(path.resolve(uploadDir)));
+} catch (e) {
+  // Graceful fallback in read-only environment
+}
 
 // Router with all API endpoints
 const apiRouter = express.Router();
 
 // Health Check
-apiRouter.get('/health', (req, res) => {
+apiRouter.get('/health', async (req, res) => {
+  let dbStatus = 'unverified';
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbStatus = 'connected';
+  } catch (dbErr: any) {
+    dbStatus = 'disconnected';
+    console.warn('[HEALTH] Database check notice:', dbErr?.message || dbErr);
+  }
+
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'HireMind AI Backend API',
-    database: 'PostgreSQL'
+    database: dbStatus,
+    runtime: process.env.VERCEL ? 'vercel-serverless' : 'standalone'
   });
 });
 
@@ -83,9 +99,13 @@ app.use('/', apiRouter);
 
 // Global Error Handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Server error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error'
+  console.error('[API ERROR]', err);
+  const statusCode = typeof err.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+  const safeMessage = statusCode === 500 
+    ? (process.env.NODE_ENV === 'development' ? err.message : 'An internal server error occurred. Please try again.')
+    : (err.message || 'Request failed.');
+  res.status(statusCode).json({
+    error: safeMessage
   });
 });
 

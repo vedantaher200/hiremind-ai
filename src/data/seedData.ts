@@ -1,6 +1,7 @@
 import { 
   UserProfile, 
   Job, 
+  Internship,
   Application, 
   AssessmentTest, 
   InterviewQuestion, 
@@ -262,6 +263,55 @@ export const SEED_JOBS: Job[] = [
     applicantCount: 25,
     status: 'Active',
     createdAt: '2026-01-18T00:00:00Z'
+  }
+];
+
+export const SEED_INTERNSHIPS: Internship[] = [
+  {
+    id: 'intern-ai-01',
+    recruiterId: 'rec-01',
+    companyId: 'comp-01',
+    company: {
+      name: 'NeuralPulse AI',
+      website: 'https://neuralpulse.ai',
+      location: 'San Francisco, CA'
+    },
+    title: 'AI/ML Engineering Intern',
+    department: 'Artificial Intelligence',
+    description: 'Work alongside research scientists building next-generation transformer models and agentic automation pipelines.',
+    skills: ['Python', 'PyTorch', 'Machine Learning', 'Transformers'],
+    eligibility: 'Penultimate or final year Computer Science / Data Science students',
+    location: 'San Francisco, CA (Hybrid)',
+    mode: 'Hybrid',
+    duration: '3 Months',
+    stipend: '$4,000 / month',
+    openings: 3,
+    status: 'ACTIVE',
+    applicantCount: 18,
+    createdAt: '2026-01-20T00:00:00Z'
+  },
+  {
+    id: 'intern-fe-02',
+    recruiterId: 'rec-02',
+    companyId: 'comp-02',
+    company: {
+      name: 'StackCraft Labs',
+      website: 'https://stackcraft.dev',
+      location: 'New York, NY'
+    },
+    title: 'Frontend React Engineering Intern',
+    department: 'Web Engineering',
+    description: 'Build responsive, accessible, and high-performance user interfaces using React, TypeScript, and Tailwind CSS.',
+    skills: ['React', 'TypeScript', 'Tailwind CSS', 'Next.js'],
+    eligibility: 'Undergraduate or Master students with frontend portfolio projects',
+    location: 'Remote',
+    mode: 'Remote',
+    duration: '6 Months',
+    stipend: '$3,500 / month',
+    openings: 2,
+    status: 'ACTIVE',
+    applicantCount: 24,
+    createdAt: '2026-01-22T00:00:00Z'
   }
 ];
 

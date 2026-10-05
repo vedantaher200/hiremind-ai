@@ -17,6 +17,7 @@ import assessmentRoutes from './routes/assessments.js';
 import interviewRoutes from './routes/interviews.js';
 import notificationRoutes from './routes/notifications.js';
 import feedbackRoutes from './routes/feedback.js';
+import aiRecruitmentRoutes from './routes/ai-recruitment.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -92,6 +93,7 @@ apiRouter.use('/assessments', assessmentRoutes);
 apiRouter.use('/interviews', interviewRoutes);
 apiRouter.use('/notifications', notificationRoutes);
 apiRouter.use('/feedback', feedbackRoutes);
+apiRouter.use('/ai', aiRecruitmentRoutes);
 
 // Dual mount under both /api and root / for seamless Vercel serverless + standalone support
 app.use('/api', apiRouter);

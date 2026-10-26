@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
-import { GoogleGenAI } from '@google/genai';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
 import { Role, PostingStatus } from '@prisma/client';
+import { scoreResumeText } from '../services/resumeScoring.js';
 
 const router = Router();
 
@@ -21,6 +21,10 @@ router.post(
       }
 
       const filePath = req.file.path;
+      if (!['application/pdf', 'text/plain'].includes(req.file.mimetype)) {
+        fs.unlink(filePath, () => undefined);
+        return res.status(415).json({ error: 'Resume parsing currently supports PDF and plain text files only.' });
+      }
       let extractedText = '';
 
       // Text extraction
@@ -41,20 +45,18 @@ router.post(
              const pdfData = await pdfParseFn(dataBuffer);
              extractedText = pdfData.text || '';
           }
-        } catch (pdfErr) {
-          console.warn('PDF text extraction fallback:', pdfErr);
+        } catch {
+          fs.unlink(filePath, () => undefined);
+          return res.status(422).json({ error: 'The PDF could not be parsed. Please upload a readable, text-based PDF.' });
         }
       }
 
-      // If text extraction was minimal or format is text/docx, read as string or basic fallback
-      if (!extractedText || extractedText.trim().length < 20) {
-        try {
-          const raw = fs.readFileSync(filePath, 'utf8');
-          // Filter readable characters
-          extractedText = raw.replace(/[^\x20-\x7E\n\r\t]/g, ' ').slice(0, 10000);
-        } catch {
-          extractedText = 'Candidate Resume: Experience in Software Development, React, Node.js, and Databases.';
-        }
+      if (req.file.mimetype === 'text/plain') {
+        extractedText = fs.readFileSync(filePath, 'utf8');
+      }
+      if (!extractedText || extractedText.trim().length < 30) {
+        fs.unlink(filePath, () => undefined);
+        return res.status(422).json({ error: 'No readable resume text was extracted. No resume record or ATS result was created.' });
       }
 
       // Save Resume record in PostgreSQL
@@ -82,175 +84,45 @@ router.post(
   }
 );
 
-/* ---------------- PERMANENT ATS ANALYSIS (GEMINI + CACHED DB) ---------------- */
+/* ---------------- DETERMINISTIC RESUME EVIDENCE ANALYSIS ---------------- */
 router.post('/analyze', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, res: Response) => {
   try {
-    const { resumeId, resumeText: rawText, targetRole = 'Software Engineer' } = req.body;
-
-    let resumeText = rawText;
-    let targetResumeId = resumeId;
-
-    if (!resumeText && resumeId) {
-      const resume = await prisma.resume.findUnique({ where: { id: resumeId } });
-      if (resume && resume.extractedText) {
-        resumeText = resume.extractedText;
-      }
+    const { resumeId } = req.body;
+    const resume = typeof resumeId === 'string'
+      ? await prisma.resume.findFirst({ where: { id: resumeId, candidateId: req.user!.id } })
+      : await prisma.resume.findFirst({ where: { candidateId: req.user!.id }, orderBy: { createdAt: 'desc' } });
+    if (!resume) return res.status(404).json({ error: 'No resume belonging to this account was found.' });
+    if (!resume.extractedText || resume.extractedText.trim().length < 30) {
+      return res.status(422).json({ error: 'The stored resume has no readable extracted text. Upload a readable PDF or text file before analyzing.' });
     }
 
-    if (!resumeText) {
-      // Find candidate's latest uploaded resume
-      const latest = await prisma.resume.findFirst({
-        where: { candidateId: req.user!.id },
-        orderBy: { createdAt: 'desc' }
-      });
-      if (latest && latest.extractedText) {
-        resumeText = latest.extractedText;
-        targetResumeId = latest.id;
-      }
-    }
+    const existingAnalysis = await prisma.resumeAnalysis.findFirst({ where: { resumeId: resume.id, scoringVersion: 'deterministic-v1' }, orderBy: { createdAt: 'desc' } });
+    if (existingAnalysis) return res.json({ message: 'Loaded the current deterministic resume analysis.', analysis: existingAnalysis });
 
-    if (!resumeText || resumeText.trim().length < 30) {
-      return res.status(400).json({
-        error: 'Provide readable resume text or upload a resume file before analyzing.'
-      });
-    }
-
-    // Check if an analysis already exists for this resume (avoid repeated Gemini calls)
-    if (targetResumeId) {
-      const existingAnalysis = await prisma.resumeAnalysis.findFirst({
-        where: { resumeId: targetResumeId },
-        orderBy: { createdAt: 'desc' }
-      });
-
-      if (existingAnalysis) {
-        return res.json({
-          message: 'Loaded cached resume analysis from database.',
-          analysis: existingAnalysis
-        });
-      }
-    }
-
-    let parsedResult: any = null;
-
-    // Call Gemini 2.5 Flash if GEMINI_API_KEY is configured
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const prompt = `You are an expert ATS (Applicant Tracking System) and Senior Technical Recruiter.
-Analyze this candidate resume for the target role: "${targetRole}".
-Return ONLY a valid JSON object with the following fields:
-{
-  "atsScore": number (0 to 100),
-  "skillMatch": number (0 to 100),
-  "experienceMatch": number (0 to 100),
-  "educationMatch": number (0 to 100),
-  "extractedSkills": string[],
-  "missingSkills": string[],
-  "strengths": string[],
-  "weaknesses": string[],
-  "experienceSummary": string,
-  "educationSummary": string,
-  "recommendation": string,
-  "improvementSuggestions": string[]
-}
-Resume content:
-${resumeText.slice(0, 12000)}`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: { responseMimeType: 'application/json' }
-        });
-
-        parsedResult = JSON.parse(response.text || '{}');
-      } catch (geminiError) {
-        console.warn('Gemini API call failed, using heuristic analysis fallback:', geminiError);
-      }
-    }
-
-    // Heuristic fallback if Gemini not configured or failed
-    if (!parsedResult || !parsedResult.atsScore) {
-      const commonTechSkills = [
-        'React', 'Node.js', 'TypeScript', 'JavaScript', 'Python', 'PostgreSQL',
-        'Docker', 'AWS', 'Tailwind', 'HTML', 'CSS', 'Git', 'SQL', 'MongoDB'
-      ];
-      const foundSkills = commonTechSkills.filter((s) =>
-        new RegExp(`\\b${s}\\b`, 'i').test(resumeText)
-      );
-      const missingSkills = commonTechSkills.filter((s) => !foundSkills.includes(s)).slice(0, 4);
-
-      parsedResult = {
-        atsScore: Math.min(95, Math.max(65, 55 + foundSkills.length * 5)),
-        skillMatch: Math.min(95, 60 + foundSkills.length * 6),
-        experienceMatch: 80,
-        educationMatch: 85,
-        extractedSkills: foundSkills.length > 0 ? foundSkills : ['JavaScript', 'HTML', 'CSS', 'Git'],
-        missingSkills,
-        strengths: [
-          'Clear technical skills inventory and relevant project implementations',
-          'Good foundational knowledge of web architecture and software patterns'
-        ],
-        weaknesses: [
-          'Could quantify business metrics and performance impact more explicitly'
-        ],
-        experienceSummary: 'Demonstrated experience across full-stack application lifecycle.',
-        educationSummary: 'Bachelor in Computer Science or related engineering background.',
-        recommendation: 'Strong candidate for interview screening.',
-        improvementSuggestions: [
-          'Add quantifiable outcomes (e.g. reduced load time by 30%, served 10k users)',
-          'Highlight experience with automated testing and continuous integration'
-        ]
-      };
-    }
-
-    // If candidate has no Resume record yet, create one
-    if (!targetResumeId) {
-      const newResume = await prisma.resume.create({
-        data: {
-          candidateId: req.user!.id,
-          fileName: 'Uploaded_Resume.pdf',
-          storagePath: 'virtual_resume_' + Date.now(),
-          fileType: 'application/pdf',
-          fileSize: resumeText.length,
-          extractedText: resumeText.slice(0, 50000)
-        }
-      });
-      targetResumeId = newResume.id;
-    }
-
-    // Save permanently to PostgreSQL
+    const result = scoreResumeText(resume.extractedText);
     const savedAnalysis = await prisma.resumeAnalysis.create({
       data: {
-        resumeId: targetResumeId,
+        resumeId: resume.id,
         candidateId: req.user!.id,
-        atsScore: Number(parsedResult.atsScore) || 75,
-        skillMatch: Number(parsedResult.skillMatch) || 70,
-        experienceMatch: Number(parsedResult.experienceMatch) || 75,
-        educationMatch: Number(parsedResult.educationMatch) || 80,
-        extractedSkills: Array.isArray(parsedResult.extractedSkills) ? parsedResult.extractedSkills : [],
-        missingSkills: Array.isArray(parsedResult.missingSkills) ? parsedResult.missingSkills : [],
-        strengths: Array.isArray(parsedResult.strengths) ? parsedResult.strengths : [],
-        weaknesses: Array.isArray(parsedResult.weaknesses) ? parsedResult.weaknesses : [],
-        experienceSummary: String(parsedResult.experienceSummary || ''),
-        educationSummary: String(parsedResult.educationSummary || ''),
-        recommendation: String(parsedResult.recommendation || 'Proceed to assessment'),
-        improvementSuggestions: Array.isArray(parsedResult.improvementSuggestions) ? parsedResult.improvementSuggestions : []
+        atsScore: result.atsScore,
+        skillMatch: result.skillMatch,
+        experienceMatch: result.experienceMatch,
+        educationMatch: result.educationMatch,
+        extractedSkills: result.extractedSkills,
+        skillEvidence: result.skillEvidence,
+        missingSkills: result.missingSkills,
+        strengths: result.strengths,
+        weaknesses: result.weaknesses,
+        experienceSummary: result.experienceSummary,
+        educationSummary: result.educationSummary,
+        recommendation: result.recommendation,
+        improvementSuggestions: result.improvementSuggestions,
+        scoringVersion: result.scoringVersion
       }
     });
 
-    // Update candidate's extracted skills in User profile
-    if (parsedResult.extractedSkills?.length > 0) {
-      await prisma.user.update({
-        where: { id: req.user!.id },
-        data: {
-          skills: parsedResult.extractedSkills,
-          matchScore: savedAnalysis.atsScore
-        }
-      });
-    }
-
     res.json({
-      message: 'Resume analysis completed and saved permanently.',
+      message: 'Resume evidence analysis completed and saved permanently.',
       analysis: savedAnalysis
     });
   } catch (err: any) {
@@ -312,8 +184,10 @@ router.get('/match-all', requireAuth, requireRole(Role.CANDIDATE), async (req: R
       return res.status(404).json({ error: 'Candidate not found.' });
     }
 
-    const candidateSkills: string[] =
-      candidate.resumes[0]?.analyses[0]?.extractedSkills || candidate.skills || [];
+    const latestAnalysis = candidate.resumes[0]?.analyses[0];
+    const candidateSkills: string[] = latestAnalysis?.scoringVersion === 'deterministic-v1'
+      ? latestAnalysis.extractedSkills
+      : [];
 
     const candidateSkillsLower = candidateSkills.map((s) => s.toLowerCase());
 

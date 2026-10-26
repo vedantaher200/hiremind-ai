@@ -19,13 +19,18 @@ declare global {
   }
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'hiremind_jwt_secret_dev_key_2026_super_safe';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 export const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.status(401).json({ error: 'Authentication required. Please log in.' });
+      return;
+    }
+
+    if (!JWT_SECRET) {
+      res.status(503).json({ error: 'Authentication service is not configured.' });
       return;
     }
 

@@ -62,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Find Opportunities',
       icon: Search
     },
+    { id: 'my-applications', label: 'My Applications', icon: FileSpreadsheet },
     {
       id: 'internships',
       label: 'Internships',

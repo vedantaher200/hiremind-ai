@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { UserProfile, UserRole } from '../types';
 import { api, getToken, setToken, clearToken } from '../lib/api';
-import { STORAGE_KEYS, getStoredItem, setStoredItem } from '../lib/supabase';
+import { STORAGE_KEYS, setStoredItem } from '../lib/supabase';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -82,17 +82,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser(mapped);
               setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
             }
-          } catch (err) {
-            console.warn('[AUTH] Token invalid or expired, clearing session:', err);
-            clearToken();
-            localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
-            if (isMounted) setUser(null);
-          }
-        } else {
-          // Local storage session fallback for offline/demo
-          const storedUser = getStoredItem<UserProfile | null>(STORAGE_KEYS.AUTH_USER, null);
-          if (storedUser && isMounted) {
-            setUser(storedUser);
+          } catch (err: any) {
+            if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
+              clearToken();
+              localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+              if (isMounted) setUser(null);
+            } else {
+              console.warn('[AUTH] Could not validate the stored session because the authentication service is unavailable.');
+            }
           }
         }
       } catch (err) {
@@ -114,20 +111,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     password: string,
     expectedRole?: UserRole
   ): Promise<UserProfile> => {
-    setIsLoading(true);
     try {
       const data = await api.auth.login(email, password, expectedRole);
-      
-      if (data.token) setToken(data.token);
+      if (!data.token || !data.user) throw new Error('The server returned an incomplete login response. Please try again.');
+      setToken(data.token);
       
       const mapped = mapUserResponse(data.user, expectedRole);
       setUser(mapped);
       setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
       
-      setIsLoading(false);
       return mapped;
     } catch (err: any) {
-      setIsLoading(false);
       throw err;
     }
   };
@@ -142,12 +136,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     companyName?: string,
     setupKey?: string
   ): Promise<{ status: 'signed_in' | 'confirmation_required' | 'pending_approval' | 'created'; user?: UserProfile }> => {
-    setIsLoading(true);
-    
     try {
       if (role === 'admin') {
         await api.auth.registerAdmin({ name, email, password, setupKey });
-        setIsLoading(false);
         return { status: 'created' };
       } 
       
@@ -158,45 +149,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await api.auth.registerRecruiter({
           name, email, password, companyName, companyWebsite: organizationWebsite
         });
-        setIsLoading(false);
         return { status: 'pending_approval' };
       }
       
       // Candidate registration
       const data = await api.auth.registerCandidate({ name, email, password });
       
-      if (data.token) setToken(data.token);
+      if (!data.token || !data.user) throw new Error('The server returned an incomplete registration response. Please try again.');
+      setToken(data.token);
       
       const mapped = mapUserResponse(data.user, role);
       setUser(mapped);
       setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
       
-      setIsLoading(false);
       return { status: 'signed_in', user: mapped };
       
     } catch (err: any) {
-      setIsLoading(false);
       throw err;
     }
   };
 
   /* ---------------- GOOGLE AUTH ---------------- */
   const loginWithGoogle = async (credential: string, targetRole: UserRole = 'candidate'): Promise<UserProfile> => {
-    setIsLoading(true);
     try {
       const data = await api.auth.google(credential, targetRole);
-      if (data.token) setToken(data.token);
+      if (!data.token || !data.user) throw new Error('The server returned an incomplete Google sign-in response.');
+      setToken(data.token);
       
       const mapped = mapUserResponse(data.user, targetRole);
       setUser(mapped);
       setStoredItem(STORAGE_KEYS.AUTH_USER, mapped);
       
-      setIsLoading(false);
       return mapped;
     } catch (err: any) {
-      clearToken();
-      setUser(null);
-      setIsLoading(false);
       throw err;
     }
   };

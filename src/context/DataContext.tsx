@@ -17,10 +17,7 @@ import {
   DEFAULT_WEIGHTS, 
   SEED_JOBS, 
   SEED_INTERNSHIPS, 
-  SEED_CANDIDATES_LIST, 
-  SEED_APPLICATIONS, 
-  SEED_TEST_ATTEMPTS, 
-  SEED_RESUME_ANALYSIS 
+  SEED_CANDIDATES_LIST
 } from '../data/seedData';
 import { api, getToken } from '../lib/api';
 import { useAuth } from './AuthContext';
@@ -257,7 +254,9 @@ const mapBackendAppToFrontend = (app: any, currentUser?: UserProfile | null): Ap
       overallScore: Number(rawScores.overallScore) || 0
     },
     resumeUrl: app.resume?.storagePath ? `/uploads/resumes/${app.resume.storagePath}` : undefined,
-    notes: app.notes || undefined
+    notes: app.notes || undefined,
+    shareableFeedback: app.shareableFeedback || undefined,
+    feedbackCategories: app.feedbackCategories || []
   };
 };
 
@@ -294,6 +293,8 @@ export interface DataContextType {
   candidates: UserProfile[];
   resumeAnalyses: ResumeAnalysis[];
   latestResume: ResumeAnalysis | null;
+  resumeLoadError: string | null;
+  candidateDataLoadError: string | null;
   tests: AssessmentTest[];
   testAttempts: TestAttempt[];
   interviewSession: InterviewSession | null;
@@ -303,7 +304,7 @@ export interface DataContextType {
 
   addJob: (job: Omit<Job, 'id' | 'applicantCount' | 'createdAt'>) => Promise<void>;
   applyForJob: (jobId: string, candidate: UserProfile) => Promise<void>;
-  updateApplicationStatus: (appId: string, status: ApplicationStatus) => Promise<void>;
+  updateApplicationStatus: (appId: string, status: ApplicationStatus, rejectionFeedback?: string) => Promise<void>;
   saveResumeAnalysis: (analysis: ResumeAnalysis) => Promise<void>;
   recordTestAttempt: (attempt: Omit<TestAttempt, 'id' | 'completedAt'>) => Promise<void>;
   updateInterviewResponse: (session: InterviewSession) => Promise<void>;
@@ -329,9 +330,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [jobs, setJobs] = useState<Job[]>(SEED_JOBS);
   const [internships, setInternships] = useState<Internship[]>(SEED_INTERNSHIPS);
   const [candidates, setCandidates] = useState<UserProfile[]>(SEED_CANDIDATES_LIST);
-  const [applications, setApplications] = useState<Application[]>(SEED_APPLICATIONS);
-  const [resumeAnalyses, setResumeAnalyses] = useState<ResumeAnalysis[]>([SEED_RESUME_ANALYSIS]);
-  const [testAttempts, setTestAttempts] = useState<TestAttempt[]>(SEED_TEST_ATTEMPTS);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [resumeAnalyses, setResumeAnalyses] = useState<ResumeAnalysis[]>([]);
+  const [testAttempts, setTestAttempts] = useState<TestAttempt[]>([]);
+  const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
+  const [candidateDataLoadError, setCandidateDataLoadError] = useState<string | null>(null);
   const [rankingWeights, setRankingWeights] = useState<RankingWeights>(DEFAULT_WEIGHTS);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [interviewSession, setInterviewSession] = useState<InterviewSession | null>(null);
@@ -342,6 +345,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ========================================================= */
 
   const refreshData = useCallback(async () => {
+    const candidateLoadErrors: string[] = [];
     try {
       // 1. Fetch public / active jobs
       const fetchedJobs = await api.jobs.list().catch(() => []);
@@ -390,7 +394,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // 4. User-specific interviews
-      const interviews = await api.interviews.list().catch(() => []);
+      const interviews = await api.interviews.list().catch(() => {
+        if (user.role === 'candidate') candidateLoadErrors.push('interviews');
+        return [];
+      });
       if (Array.isArray(interviews)) {
         setScheduledInterviews(
           interviews.map((item: any) => ({
@@ -472,36 +479,57 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else if (user.role === 'candidate') {
         // Candidate's own applications
-        const myApps = await api.applications.myApplications().catch(() => []);
+        const myApps = await api.applications.myApplications().catch(() => {
+          candidateLoadErrors.push('applications');
+          return [];
+        });
         if (Array.isArray(myApps)) {
           setApplications(myApps.map((app: any) => mapBackendAppToFrontend(app, user)));
         }
 
         // Candidate's latest resume and analysis
-        const resumeRes = await api.resumes.latest().catch(() => ({ resume: null, analysis: null }));
+        let resumeRes: { resume: any; analysis: any };
+        try {
+          resumeRes = await api.resumes.latest();
+          setResumeLoadError(null);
+        } catch (error) {
+          resumeRes = { resume: null, analysis: null };
+          setResumeLoadError(error instanceof Error ? error.message : 'Unable to load your resume analysis.');
+        }
         if (resumeRes?.analysis) {
           const a = resumeRes.analysis;
           const formattedAnalysis: ResumeAnalysis = {
             id: a.id,
             candidateId: a.candidateId,
+            resumeId: resumeRes.resume?.id,
             fileName: resumeRes.resume?.fileName || 'Resume.pdf',
             uploadedAt: a.createdAt || new Date().toISOString(),
-            fileSize: `${((resumeRes.resume?.fileSize || 50000) / 1024).toFixed(1)} KB`,
-            atsCompatibilityScore: Math.round(a.atsScore || 75),
+            fileSize: `${((resumeRes.resume?.fileSize || 0) / 1024).toFixed(1)} KB`,
+            atsCompatibilityScore: Math.round(Number(a.atsScore)),
             extractedSkills: a.extractedSkills || [],
+            skillEvidence: Array.isArray(a.skillEvidence) ? a.skillEvidence : [],
+            scoringVersion: a.scoringVersion || undefined,
+            rawText: resumeRes.resume?.extractedText || '',
+            skillsMatchPercentage: Number(a.skillMatch ?? 0),
+            experienceMatchPercentage: Number(a.experienceMatch ?? 0),
+            educationMatchPercentage: Number(a.educationMatch ?? 0),
             strengths: a.strengths || [],
             missingSkills: a.missingSkills || [],
             experienceSummary: a.experienceSummary || '',
             educationSummary: a.educationSummary || '',
             improvementSuggestions: a.improvementSuggestions || [],
-            targetRole: 'Software Developer',
-            source: 'ai'
+            source: a.scoringVersion === 'deterministic-v1' ? 'rules' : 'legacy'
           };
           setResumeAnalyses([formattedAnalysis]);
+        } else {
+          setResumeAnalyses([]);
         }
 
         // Candidate's test attempts
-        const attempts = await api.assessments.myAttempts().catch(() => []);
+        const attempts = await api.assessments.myAttempts().catch(() => {
+          candidateLoadErrors.push('assessments');
+          return [];
+        });
         if (Array.isArray(attempts)) {
           setTestAttempts(
             attempts.map((att: any) => ({
@@ -521,6 +549,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           );
         }
 
+        setCandidateDataLoadError(candidateLoadErrors.length
+          ? `Some candidate records could not be loaded (${candidateLoadErrors.join(', ')}). Dashboard counts may be incomplete; refresh or try again.`
+          : null);
+
         setCandidates([user]);
       }
     } catch (err) {
@@ -529,6 +561,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   useEffect(() => {
+    setApplications([]);
+    setResumeAnalyses([]);
+    setTestAttempts([]);
+    setScheduledInterviews([]);
+    setInterviewSession(null);
+    setResumeLoadError(null);
+    setCandidateDataLoadError(null);
     void refreshData();
   }, [refreshData]);
 
@@ -660,13 +699,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
      UPDATE APPLICATION STATUS
   ========================================================= */
 
-  const updateApplicationStatus = async (appId: string, status: ApplicationStatus) => {
+  const updateApplicationStatus = async (appId: string, status: ApplicationStatus, rejectionFeedback?: string) => {
     const backendStatus = mapFrontendStatusToBackend(status);
 
-    await api.applications.updateStatus(appId, backendStatus);
+    const result = await api.applications.updateStatus(appId, backendStatus, undefined, rejectionFeedback);
 
     setApplications(prev =>
-      prev.map(app => (app.id === appId ? { ...app, status } : app))
+      prev.map(app => (app.id === appId ? { ...app, status, shareableFeedback: result.application.shareableFeedback || app.shareableFeedback } : app))
     );
 
     addNotification(
@@ -798,6 +837,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       date: input.interviewDate,
       time: input.interviewTime,
       durationMinutes: 45,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       interviewType: input.interviewType,
       mode: input.mode,
       meetingLink: input.meetingLink,
@@ -829,6 +869,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         candidates,
         resumeAnalyses,
         latestResume,
+        resumeLoadError,
+        candidateDataLoadError,
         tests: DEFAULT_TESTS,
         testAttempts,
         interviewSession,

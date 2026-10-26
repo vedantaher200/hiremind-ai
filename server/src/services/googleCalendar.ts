@@ -19,29 +19,32 @@ export const createGoogleMeetInterview = async (
   jobTitle: string,
   date: string,
   time: string,
-  durationMinutes: number
+  durationMinutes: number,
+  timeZone: string
 ) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REFRESH_TOKEN) {
     throw new Error('Google Calendar OAuth credentials are not configured.');
   }
+  oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
 
   // Set up the Calendar API
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
   
   // Create start and end datetime
-  const startDateTime = new Date(`${date}T${time}:00`);
+  const startDateTime = new Date(`${date}T${time}:00Z`);
   const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
+  const localEnd = endDateTime.toISOString().slice(0, 19);
 
   const event = {
     summary: `Interview for ${jobTitle} - ${candidateName}`,
     description: `Technical interview for ${jobTitle}. Please join via the provided Google Meet link.`,
     start: {
-      dateTime: startDateTime.toISOString(),
-      timeZone: 'UTC', // Ensure frontend sends local time appropriately or adjust timezone
+      dateTime: `${date}T${time}:00`,
+      timeZone,
     },
     end: {
-      dateTime: endDateTime.toISOString(),
-      timeZone: 'UTC',
+      dateTime: localEnd,
+      timeZone,
     },
     attendees: [
       { email: candidateEmail }

@@ -8,12 +8,13 @@ import { upload } from '../middleware/upload.js';
 import { Role, CompanyVerificationStatus } from '@prisma/client';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'hiremind_jwt_secret_dev_key_2026_super_safe';
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 const generateToken = (user: { id: string; email: string; role: Role }) => {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured.');
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, {
     expiresIn: '7d'
   });
@@ -358,11 +359,17 @@ router.post('/google', async (req: Request, res: Response) => {
         error: 'Google Sign-In is not configured on this server. Please sign in with email and password.'
       });
     }
+    const requestedRoleValue = String(requestedRole).toUpperCase();
+    if (requestedRoleValue !== Role.CANDIDATE && requestedRoleValue !== Role.RECRUITER) {
+      return res.status(400).json({ error: 'Google Sign-In is available only for candidate or recruiter accounts.' });
+    }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: GOOGLE_CLIENT_ID
-    });
+    let ticket;
+    try {
+      ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
+    } catch {
+      return res.status(401).json({ error: 'Google rejected this sign-in credential. Please try again.' });
+    }
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
       return res.status(401).json({ error: 'Invalid or unverified Google authentication token.' });
@@ -381,7 +388,10 @@ router.post('/google', async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      const roleToAssign = requestedRole === 'RECRUITER' ? Role.RECRUITER : Role.CANDIDATE;
+      if (requestedRoleValue === Role.RECRUITER) {
+        return res.status(403).json({ error: 'Recruiter accounts must be registered with company details and approved before Google sign-in can be linked.' });
+      }
+      const roleToAssign = Role.CANDIDATE;
       user = await prisma.user.create({
         data: {
           email: cleanEmail,
@@ -393,6 +403,17 @@ router.post('/google', async (req: Request, res: Response) => {
         },
         include: { company: true }
       });
+    }
+
+    if (user.role.toUpperCase() !== requestedRoleValue) {
+      return res.status(403).json({ error: `This Google account is registered as a ${user.role.toLowerCase()}. Select the matching role.`, code: 'ROLE_MISMATCH', actualRole: user.role });
+    }
+
+    if (user.googleId && user.googleId !== googlePayload.sub) {
+      return res.status(403).json({ error: 'This account is linked to a different Google identity.' });
+    }
+    if (!user.googleId) {
+      user = await prisma.user.update({ where: { id: user.id }, data: { googleId: googlePayload.sub, avatar: user.avatar || googlePayload.picture }, include: { company: true } });
     }
 
     // Recruiter approval guard
@@ -426,8 +447,8 @@ router.post('/google', async (req: Request, res: Response) => {
       }
     });
   } catch (err: any) {
-    console.error('Google Sign-In error:', err);
-    res.status(500).json({ error: err.message || 'Google authentication failed.' });
+    console.error('Google Sign-In failed due to an unexpected server error.');
+    res.status(500).json({ error: 'Google authentication failed. Please try again.' });
   }
 });
 

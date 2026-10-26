@@ -42,6 +42,8 @@ export const CandidateDashboard: React.FC<
     applications,
     testAttempts,
     latestResume,
+    resumeLoadError,
+    candidateDataLoadError,
     interviewSession,
     scheduledInterviews
   } = useData();
@@ -131,7 +133,7 @@ export const CandidateDashboard: React.FC<
     );
 
   const resumeScore =
-    latestResume?.candidateId === user?.id
+    latestResume?.candidateId === user?.id && latestResume.source !== 'legacy'
       ? latestResume.atsCompatibilityScore
       : null;
 
@@ -141,7 +143,7 @@ export const CandidateDashboard: React.FC<
     ...(resumeScore !== null ? [resumeScore] : [])
   ];
 
-  const averageScore =
+  const averageScore: number | null =
     allScores.length > 0
       ? Math.round(
           allScores.reduce(
@@ -149,7 +151,7 @@ export const CandidateDashboard: React.FC<
             0
           ) / allScores.length
         )
-      : 0;
+      : null;
 
   /* =========================================================
      PROFILE COMPLETENESS
@@ -179,7 +181,7 @@ export const CandidateDashboard: React.FC<
 
   const resumeProgress =
     latestResume &&
-    latestResume.candidateId === user?.id
+    latestResume.candidateId === user?.id && latestResume.source !== 'legacy'
       ? latestResume.atsCompatibilityScore
       : 0;
 
@@ -207,12 +209,13 @@ export const CandidateDashboard: React.FC<
 
     if (
       latestResume &&
-      latestResume.candidateId === user?.id
+      latestResume.candidateId === user?.id &&
+      latestResume.source !== 'legacy'
     ) {
       items.push({
         id: `resume-${latestResume.id}`,
         title: 'Resume Uploaded & Analyzed',
-        description: `ATS compatibility score: ${latestResume.atsCompatibilityScore}%.${
+        description: `Resume evidence score: ${latestResume.atsCompatibilityScore}%.${
           latestResume.targetRole
             ? ` Target role: ${latestResume.targetRole}.`
             : ''
@@ -381,6 +384,10 @@ export const CandidateDashboard: React.FC<
           </p>
         </div>
 
+        {resumeLoadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Unable to load your saved resume analysis: {resumeLoadError}</div>}
+        {candidateDataLoadError && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{candidateDataLoadError}</div>}
+        {latestResume?.source === 'legacy' && latestResume.candidateId === user?.id && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Your saved ATS result used an older fallback scorer. Its score is excluded until the resume is re-analyzed using the current evidence-based rules.</div>}
+
         <div className="bg-white rounded-3xl border border-[#E5E7EB] p-10 text-center">
           <FileText className="w-10 h-10 text-[#3525CD] mx-auto mb-3" />
 
@@ -461,6 +468,9 @@ export const CandidateDashboard: React.FC<
         </div>
       </div>
 
+      {candidateDataLoadError && <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{candidateDataLoadError}</div>}
+      {resumeLoadError && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">Unable to load your saved resume analysis: {resumeLoadError}</div>}
+
       {/* =====================================================
           STAT CARDS
       ===================================================== */}
@@ -524,22 +534,24 @@ export const CandidateDashboard: React.FC<
 
         <StatCard
           label="Average Score"
-          value={`${averageScore}%`}
+          value={averageScore === null ? '—' : `${averageScore}%`}
           icon={Award}
           accentColor="amber"
           subtext={
             allScores.length > 0
               ? 'Based on your evaluations'
-              : 'Complete assessments'
+              : 'No verified scores yet'
           }
           trend={{
             value:
-              averageScore >= 75
+              averageScore === null
+                ? 'No verified scores'
+                : averageScore >= 75
                 ? 'Strong performance'
                 : averageScore >= 50
                 ? 'Good progress'
                 : 'Keep improving',
-            isPositive: averageScore >= 50
+            isPositive: averageScore !== null && averageScore >= 50
           }}
         />
       </div>
@@ -771,15 +783,12 @@ export const CandidateDashboard: React.FC<
             ============================================= */}
 
             <div className="py-2 flex flex-col items-center">
-              <CircularScore
-                score={averageScore}
-                size={130}
-                strokeWidth={11}
-                label="Overall Score"
-              />
+              {averageScore === null ? <p className="py-12 text-sm font-semibold text-[#737380]">No verified scores yet</p> : <CircularScore score={averageScore} size={130} strokeWidth={11} label="Overall Score" />}
 
               <p className="mt-3 text-center text-xs font-semibold text-[#191C1D]">
-                {averageScore >= 80
+                {averageScore === null
+                  ? 'Complete an assessment or current resume analysis to build your score.'
+                  : averageScore >= 80
                   ? 'Excellent progress across your evaluations.'
                   : averageScore >= 60
                   ? 'You are making strong progress.'
@@ -853,8 +862,7 @@ export const CandidateDashboard: React.FC<
               QUICK SUMMARY
           ================================================= */}
 
-          {latestResume &&
-            latestResume.candidateId === user?.id && (
+          {latestResume && latestResume.candidateId === user?.id && latestResume.source !== 'legacy' && (
               <div className="bg-gradient-to-br from-indigo-50 to-purple-50/50 p-5 rounded-2xl border border-indigo-100">
                 <div className="flex items-center gap-2 mb-3">
                   <CheckCircle2 className="w-4 h-4 text-[#3525CD]" />
@@ -867,7 +875,7 @@ export const CandidateDashboard: React.FC<
                 <div className="space-y-2 text-xs">
                   <div className="flex justify-between gap-3">
                     <span className="text-[#737380]">
-                      ATS Score
+                      Resume Evidence Score
                     </span>
 
                     <span className="font-bold text-[#191C1D]">
@@ -905,6 +913,7 @@ export const CandidateDashboard: React.FC<
                 </div>
               </div>
             )}
+          {latestResume?.source === 'legacy' && latestResume.candidateId === user?.id && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Legacy resume score is not shown as verified. Re-analyze the stored resume in Resume Intelligence.</div>}
         </div>
       </div>
     </div>

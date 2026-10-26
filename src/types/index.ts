@@ -115,6 +115,8 @@ export interface Application {
 
   resumeUrl?: string;
   notes?: string;
+  shareableFeedback?: string;
+  feedbackCategories?: string[];
 
   // AI Hiring Intelligence
   aiRecommendation?: AIHiringRecommendation;
@@ -181,14 +183,18 @@ export interface ResumeAnalysis {
 
   targetRole?: string;
   rawText?: string;
+  resumeId?: string;
+  scoringVersion?: string;
+  skillEvidence?: Array<{ skill: string; excerpt: string }>;
   jobId?: string;
 
-  source?: 'rules' | 'ai';
+  source?: 'rules' | 'ai' | 'legacy';
 
   // Advanced AI analysis
   keywordMatchPercentage?: number;
   experienceMatchPercentage?: number;
   skillsMatchPercentage?: number;
+  educationMatchPercentage?: number;
 
   aiSummary?: string;
   analysisConfidence?: number;

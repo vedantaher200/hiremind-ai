@@ -269,11 +269,12 @@ export const api = {
       if (params?.applicationType) query.set('applicationType', params.applicationType);
       return request<any[]>(`/applications/recruiter${query.toString() ? `?${query.toString()}` : ''}`);
     },
-    updateStatus: (id: string, status: string, notes?: string) =>
+    updateStatus: (id: string, status: string, notes?: string, rejectionFeedback?: string) =>
       request<{ message: string; application: any }>(`/applications/${id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, notes })
-      })
+        body: JSON.stringify({ status, notes, shareableFeedback: rejectionFeedback })
+      }),
+    askFeedback: (id: string, question: string) => request<{ answer: string; recordedFeedback: string | null; suggestions: string[] }>(`/applications/${id}/feedback-chat`, { method: 'POST', body: JSON.stringify({ question }) })
   },
 
   resumes: {
@@ -288,7 +289,7 @@ export const api = {
         }
       );
     },
-    analyze: (data: { resumeId?: string; resumeText?: string; targetRole?: string }) =>
+    analyze: (data: { resumeId?: string }) =>
       request<{ message: string; analysis: any }>('/resumes/analyze', {
         method: 'POST',
         body: JSON.stringify(data)

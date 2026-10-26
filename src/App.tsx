@@ -16,6 +16,7 @@ import { ResultsPage } from './pages/candidate/ResultsPage';
 import { CandidateProfilePage } from './pages/candidate/CandidateProfilePage';
 import { JobsPage } from './pages/candidate/JobsPage';
 import { InternshipBoardPage } from './pages/candidate/InternshipBoardPage';
+import { MyApplicationsPage } from './pages/candidate/MyApplicationsPage';
 
 // Recruiter Pages
 import { RecruiterDashboard } from './pages/recruiter/RecruiterDashboard';
@@ -114,6 +115,7 @@ const MainAppContent: React.FC = () => {
     'candidate-profile',
     'profile',
     'opportunities',
+    'my-applications',
     'internships'
   ];
 
@@ -240,6 +242,9 @@ const MainAppContent: React.FC = () => {
 
       case 'opportunities':
         return <JobsPage />;
+
+      case 'my-applications':
+        return <MyApplicationsPage />;
 
       case 'internships':
         return <InternshipBoardPage />;

@@ -45,8 +45,9 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   const [interviewTime, setInterviewTime] = useState('');
   const [interviewType, setInterviewType] = useState<'HR Interview' | 'Technical Interview' | 'AI Assessment' | 'Final Interview'>('Technical Interview');
   const [interviewMode, setInterviewMode] = useState<'Online' | 'Offline'>('Online');
-  const [meetingLink, setMeetingLink] = useState('');
   const [isScheduling, setIsScheduling] = useState(false);
+  const [rejectionFeedback, setRejectionFeedback] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const [notesList, setNotesList] = useState<string[]>([
     'Candidate assessment and recruiter observations will appear here.'
@@ -126,7 +127,6 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
         interviewTime,
         interviewType,
         mode: interviewMode,
-        meetingLink: meetingLink.trim() || undefined,
         status: 'Scheduled'
       });
 
@@ -142,16 +142,18 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   };
 
   const handleReject = async () => {
-    if (!application) return;
+    if (!application || !rejectionFeedback.trim()) { setActionError('Add a factual, job-related explanation to share with the candidate.'); return; }
 
     try {
       await updateApplicationStatus(
         application.id,
-        'Rejected'
+        'Rejected',
+        rejectionFeedback.trim()
       );
 
       setRejectModal(false);
     } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to save rejection feedback.');
       console.error(
         'Unable to reject candidate:',
         error
@@ -665,7 +667,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             <label className="font-bold text-[#464555]">Mode<select value={interviewMode} onChange={event => setInterviewMode(event.target.value as typeof interviewMode)} className="mt-1 w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl font-normal"><option>Online</option><option>Offline</option></select></label>
           </div>
 
-          {interviewMode === 'Online' && <div><label className="font-bold text-[#464555] block mb-1">Meeting Link</label><input type="url" value={meetingLink} onChange={event => setMeetingLink(event.target.value)} placeholder="https://meet.example.com/..." className="w-full p-2.5 bg-[#F8F9FA] border border-gray-200 rounded-xl" /></div>}
+          {interviewMode === 'Online' && <p className="rounded-xl bg-blue-50 p-3 text-xs text-blue-800">Google Calendar will create the event and Meet link and invite the candidate. If recruiter OAuth is not configured, scheduling will fail safely.</p>}
 
           <div>
             <label className="font-bold text-[#464555] block mb-1">
@@ -764,9 +766,10 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
       >
         <div className="space-y-4 text-xs">
           <p className="text-[#737380]">
-            Are you sure you want to mark{' '}
-            <strong>{candidateName}</strong> as rejected?
+            Record a factual, job-related explanation. This text is shared with <strong>{candidateName}</strong> and may be discussed in their feedback chat.
           </p>
+          <textarea value={rejectionFeedback} onChange={event => setRejectionFeedback(event.target.value)} maxLength={2000} rows={4} placeholder="Explain which job-related requirements were not demonstrated." className="w-full rounded-xl border border-gray-200 p-3 text-sm" />
+          {actionError && <p role="alert" className="text-sm text-rose-700">{actionError}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -782,6 +785,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             <button
               type="button"
               onClick={handleReject}
+              disabled={!rejectionFeedback.trim()}
               className="px-5 py-2 bg-rose-600 text-white font-bold rounded-xl"
             >
               Confirm Rejection

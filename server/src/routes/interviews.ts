@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { Role, ApplicationStatus } from '@prisma/client';
+import { createGoogleMeetInterview } from '../services/googleCalendar.js';
 
 const router = Router();
 
@@ -39,9 +40,10 @@ router.post('/', requireAuth, requireRole(Role.RECRUITER), async (req: Request, 
       date,
       time,
       durationMinutes = 45,
+      timeZone,
       interviewType = 'Technical',
       mode = 'Virtual (Google Meet)',
-      meetingLink = 'https://meet.google.com/hiremind-' + Math.random().toString(36).substring(2, 7),
+      meetingLink,
       notes
     } = req.body;
 
@@ -54,6 +56,27 @@ router.post('/', requireAuth, requireRole(Role.RECRUITER), async (req: Request, 
       return res.status(404).json({ error: 'Candidate not found.' });
     }
 
+    if (applicationId) {
+      const application = await prisma.application.findFirst({ where: { id: applicationId, candidateId, recruiterId: req.user!.id } });
+      if (!application) return res.status(403).json({ error: 'This application is not managed by your account.' });
+    }
+    if (!Number.isInteger(Number(durationMinutes)) || Number(durationMinutes) < 15 || Number(durationMinutes) > 240) return res.status(400).json({ error: 'Duration must be between 15 and 240 minutes.' });
+    let confirmedMeetingLink = meetingLink ? String(meetingLink) : null;
+    let googleEventId: string | null = null;
+    if (String(mode).toLowerCase().includes('virtual')) {
+      if (meetingLink) return res.status(400).json({ error: 'Enter a date and time; meeting links are created by Google Calendar.' });
+      if (typeof timeZone !== 'string' || !timeZone.trim()) return res.status(400).json({ error: 'A valid time zone is required for a virtual interview.' });
+      try {
+        const created = await createGoogleMeetInterview(req.user!.id, candidate.email, candidate.name, jobId ? (await prisma.job.findUnique({ where: { id: jobId }, select: { title: true } }))?.title || 'Interview' : 'Interview', String(date), String(time), Number(durationMinutes), timeZone);
+        if (!created.googleEventId || !created.meetingLink) throw new Error('Google Calendar did not return an event and meeting URL.');
+        confirmedMeetingLink = created.meetingLink;
+        googleEventId = created.googleEventId;
+      } catch (error: any) {
+        console.warn('Google Calendar interview creation failed:', error?.message || 'unknown error');
+        return res.status(503).json({ error: error?.message?.includes('not configured') ? error.message : 'Google Calendar could not create the interview. No interview was saved.' });
+      }
+    }
+
     const interview = await prisma.scheduledInterview.create({
       data: {
         candidateId,
@@ -63,10 +86,12 @@ router.post('/', requireAuth, requireRole(Role.RECRUITER), async (req: Request, 
         internshipId: internshipId || null,
         date: String(date),
         time: String(time),
+        timeZone: timeZone ? String(timeZone) : null,
         durationMinutes: Number(durationMinutes) || 45,
         interviewType: String(interviewType),
         mode: String(mode),
-        meetingLink: String(meetingLink),
+        meetingLink: confirmedMeetingLink,
+        googleEventId,
         notes: notes ? String(notes) : null,
         status: 'Scheduled'
       },

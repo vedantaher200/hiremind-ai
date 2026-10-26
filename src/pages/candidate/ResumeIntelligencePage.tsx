@@ -1,7 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 import { 
   UploadCloud, 
   FileText, 
@@ -25,10 +22,10 @@ import { useAuth } from '../../context/AuthContext';
 import { CircularScore } from '../../components/common/CircularScore';
 import { Modal } from '../../components/common/Modal';
 import { api } from '../../lib/api';
-import { JobMatchItem, ResumeAnalysis } from '../../types';
+import { JobMatchItem } from '../../types';
 
 export const ResumeIntelligencePage: React.FC = () => {
-  const { latestResume, resumeAnalyses, saveResumeAnalysis, jobs, applyForJob } = useData();
+  const { latestResume, resumeAnalyses, jobs, applyForJob, refreshData, resumeLoadError } = useData();
   const { user } = useAuth();
   const [isDragging, setIsDragging] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -37,6 +34,7 @@ export const ResumeIntelligencePage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [matches, setMatches] = useState<JobMatchItem[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentReport = latestResume || resumeAnalyses[0];
@@ -57,73 +55,26 @@ export const ResumeIntelligencePage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (currentReport) {
+    if (currentReport && currentReport.source !== 'legacy') {
       void fetchMatches();
     }
-  }, [currentReport?.id]);
+  }, [currentReport?.id, currentReport?.source]);
 
   const handleFileUpload = async (file: File) => {
     setError(null);
     setSuccessMsg(null);
     if (!user) return setError('Please sign in before uploading a resume.');
-    if (file.size > 15 * 1024 * 1024) return setError('Resume files must be 15MB or smaller.');
-    if (!/\.(txt|pdf|doc|docx)$/i.test(file.name)) return setError('Upload a PDF, DOC, DOCX, or TXT resume.');
+    if (file.size > 10 * 1024 * 1024) return setError('Resume files must be 10MB or smaller.');
+    if (!/\.(txt|pdf)$/i.test(file.name)) return setError('Upload a PDF or plain text resume.');
     
     setIsAnalyzing(true);
     try {
       // 1. Permanently upload the actual resume file to the backend
       const uploadRes = await api.resumes.upload(file);
       const resumeId = uploadRes.resumeId;
-      let extractedText = uploadRes.extractedText || '';
-
-      // Client-side text extraction fallback if backend text is short
-      if (!extractedText || extractedText.length < 50) {
-        if (file.type.includes('text') || file.name.toLowerCase().endsWith('.txt')) {
-          extractedText = await file.text();
-        } else if (file.name.toLowerCase().endsWith('.pdf')) {
-          const arrayBuffer = await file.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-            const page = await pdf.getPage(pageNumber);
-            const textContent = await page.getTextContent();
-            extractedText += textContent.items
-              .map((item: any) => ('str' in item ? item.str : ''))
-              .join(' ') + '\n';
-          }
-        }
-      }
-
-      // 2. Target role
-      const targetJob = jobs.find(job => job.status === 'Active');
-      const targetRole = targetJob?.title || 'Software Developer';
-
-      // 3. Run AI resume analysis on the backend (Gemini)
-      const analyzeRes = await api.resumes.analyze({
-        resumeId,
-        resumeText: extractedText,
-        targetRole
-      });
-
-      const a = analyzeRes.analysis;
-      const formattedAnalysis: ResumeAnalysis = {
-        id: a.id,
-        candidateId: user.id,
-        fileName: file.name,
-        uploadedAt: a.createdAt || new Date().toISOString(),
-        fileSize: `${(file.size / 1024).toFixed(1)} KB`,
-        atsCompatibilityScore: Math.round(a.atsScore || 75),
-        extractedSkills: a.extractedSkills || [],
-        strengths: a.strengths || [],
-        missingSkills: a.missingSkills || [],
-        experienceSummary: a.experienceSummary || '',
-        educationSummary: a.educationSummary || '',
-        improvementSuggestions: a.improvementSuggestions || [],
-        targetRole,
-        source: 'ai'
-      };
-
-      await saveResumeAnalysis(formattedAnalysis);
-      setSuccessMsg(`Resume successfully uploaded and evaluated! ATS Compatibility: ${formattedAnalysis.atsCompatibilityScore}%`);
+      const analyzeRes = await api.resumes.analyze({ resumeId });
+      await refreshData();
+      setSuccessMsg(`Resume evidence analysis saved. Score: ${Math.round(analyzeRes.analysis.atsScore)}%.`);
       
       // 4. Update multi-posting match results
       await fetchMatches();
@@ -133,6 +84,18 @@ export const ResumeIntelligencePage: React.FC = () => {
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleReanalyze = async () => {
+    if (!currentReport?.resumeId) return setError('No stored resume is available to re-analyze.');
+    setError(null); setSuccessMsg(null); setIsReanalyzing(true);
+    try {
+      const result = await api.resumes.analyze({ resumeId: currentReport.resumeId });
+      await refreshData();
+      setSuccessMsg(`Current deterministic analysis saved. Resume evidence score: ${Math.round(result.analysis.atsScore)}%.`);
+    } catch (err: any) {
+      setError(err?.message || 'Resume re-analysis failed.');
+    } finally { setIsReanalyzing(false); }
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -170,7 +133,7 @@ export const ResumeIntelligencePage: React.FC = () => {
             </span>
           </div>
           <p className="mt-1 text-sm text-[#464555] leading-relaxed max-w-3xl">
-            Upload your resume to store it permanently, extract technical competencies, score ATS compatibility, and automatically match across all active jobs and internships.
+            Upload your resume to store it permanently, extract technical competencies, calculate a transparent resume evidence score, and compare supported skills with active jobs and internships.
           </p>
         </div>
 
@@ -185,6 +148,7 @@ export const ResumeIntelligencePage: React.FC = () => {
       </div>
 
       {error && <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">{error}</div>}
+      {resumeLoadError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">Unable to load the saved resume analysis: {resumeLoadError}</div>}
       {successMsg && <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800">{successMsg}</div>}
 
       {/* Large Drag and Drop Upload Area */}
@@ -201,7 +165,7 @@ export const ResumeIntelligencePage: React.FC = () => {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.docx,.txt"
+          accept=".pdf,.txt"
           onChange={onFileChange}
           className="hidden"
         />
@@ -215,7 +179,7 @@ export const ResumeIntelligencePage: React.FC = () => {
               Analyzing Resume with HireMind Intelligence...
             </h3>
             <p className="text-xs text-[#737380] max-w-sm">
-              Storing file permanently, extracting technical competencies, evaluating semantic keywords, and measuring ATS compatibility against job benchmarks.
+              Storing the file, extracting readable text, and calculating a deterministic resume evidence completeness score.
             </p>
           </div>
         ) : (
@@ -259,28 +223,33 @@ export const ResumeIntelligencePage: React.FC = () => {
       {/* AI ANALYSIS REPORT SECTION */}
       {currentReport && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between pb-2 border-b border-[#E5E7EB]">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-[#E5E7EB]">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-[#712AE2]" />
               <h2 className="text-xl font-extrabold text-[#191C1D] tracking-tight">
-                AI Analysis Report
+                Resume Evidence Analysis
               </h2>
             </div>
-            <span className="text-xs font-semibold text-[#737380]">
-              Target Role: <strong className="text-[#191C1D]">{currentReport.targetRole || 'Software Developer'}</strong>
-            </span>
+            {currentReport.source === 'legacy'
+              ? <button type="button" onClick={() => void handleReanalyze()} disabled={isReanalyzing} className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{isReanalyzing ? 'Re-analyzing…' : 'Re-analyze stored resume'}</button>
+              : <span className="text-xs font-semibold text-[#737380]">Deterministic scoring rules v1</span>}
           </div>
+
+          {currentReport.source === 'legacy' && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">This saved result used the previous fallback scorer, which could invent skills and summaries. Its score and extracted details are not presented as verified. Re-analyze the stored resume to preserve this historical record and create a current evidence-based result.</div>}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* ATS Score Card */}
             <div className="bg-white p-6 rounded-2xl border border-[#E5E7EB] shadow-[0_10px_30px_-5px_rgba(79,70,229,0.04)] flex flex-col items-center justify-center text-center">
-              <CircularScore score={currentReport.atsCompatibilityScore} size={130} strokeWidth={10} />
-              <h3 className="mt-4 text-sm font-bold text-[#191C1D]">
-                ATS Compatibility Score
-              </h3>
-              <p className="text-xs text-[#737380] mt-1 max-w-[200px]">
-                Calculated using semantic matching against active industry role benchmarks.
-              </p>
+              {currentReport.source === 'legacy' ? <p className="text-sm font-bold text-amber-800">Score not verified</p> : <>
+                <CircularScore score={currentReport.atsCompatibilityScore} size={130} strokeWidth={10} />
+                <h3 className="mt-4 text-sm font-bold text-[#191C1D]">Resume Evidence Completeness</h3>
+                <p className="text-xs text-[#737380] mt-1">Not a job-match score or hiring probability.</p>
+                <div className="mt-4 w-full space-y-1 text-left text-xs text-slate-600">
+                  <p>Skills: {currentReport.skillsMatchPercentage ?? 0}% × 50%</p>
+                  <p>Experience evidence: {currentReport.experienceMatchPercentage ?? 0}% × 30%</p>
+                  <p>Education evidence: {currentReport.educationMatchPercentage ?? 0}% × 20%</p>
+                </div>
+              </>}
             </div>
 
             {/* Extracted Skills */}
@@ -289,16 +258,11 @@ export const ResumeIntelligencePage: React.FC = () => {
                 <Check className="w-4 h-4 text-emerald-600" />
                 <span>Extracted Skills ({currentReport.extractedSkills.length})</span>
               </h3>
-              <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+              {currentReport.source === 'legacy' ? <p className="text-xs text-amber-800">Old skill extraction is unverified. Re-analyze to inspect supported skills.</p> : <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
                 {currentReport.extractedSkills.map((skill, idx) => (
-                  <span
-                    key={idx}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-[#3525CD] border border-indigo-100"
-                  >
-                    {skill}
-                  </span>
+                  <details key={idx} className="rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs text-[#3525CD]"><summary className="cursor-pointer font-semibold">{skill}</summary><p className="mt-2 max-w-md text-slate-700">{currentReport.skillEvidence?.find(evidence => evidence.skill === skill)?.excerpt || 'Skill term was detected in parsed resume text.'}</p></details>
                 ))}
-              </div>
+              </div>}
             </div>
 
             {/* Missing Skills / Gaps */}
@@ -318,7 +282,7 @@ export const ResumeIntelligencePage: React.FC = () => {
                     </span>
                   ))
                 ) : (
-                  <p className="text-xs text-[#737380] italic">No critical skill gaps identified.</p>
+                  <p className="text-xs text-[#737380] italic">No job description was supplied, so job-specific skill gaps were not evaluated.</p>
                 )}
               </div>
             </div>
@@ -332,7 +296,7 @@ export const ResumeIntelligencePage: React.FC = () => {
                 Experience Summary
               </h4>
               <p className="text-xs text-[#191C1D] leading-relaxed">
-                {currentReport.experienceSummary || 'Candidate has software development background.'}
+                {currentReport.source === 'legacy' ? 'Legacy summary is not verified. Re-analyze the resume.' : currentReport.experienceSummary || 'No experience section was detected in parsed resume text.'}
               </p>
             </div>
 
@@ -342,7 +306,7 @@ export const ResumeIntelligencePage: React.FC = () => {
                 Education Summary
               </h4>
               <p className="text-xs text-[#191C1D] leading-relaxed">
-                {currentReport.educationSummary || 'Computer Science or relevant Engineering background.'}
+                {currentReport.source === 'legacy' ? 'Legacy summary is not verified. Re-analyze the resume.' : currentReport.educationSummary || 'No education section was detected in parsed resume text.'}
               </p>
             </div>
 
@@ -353,10 +317,7 @@ export const ResumeIntelligencePage: React.FC = () => {
                 Improvement Suggestions
               </h4>
               <ul className="space-y-2 text-xs text-[#464555]">
-                {(currentReport.improvementSuggestions.length > 0 ? currentReport.improvementSuggestions : [
-                  'Add quantifiable metrics to recent project descriptions.',
-                  'Highlight system design and CI/CD experience.'
-                ]).map((item, idx) => (
+                {(currentReport.source === 'legacy' ? ['Legacy suggestions are not verified. Re-analyze the resume.'] : currentReport.improvementSuggestions).map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#712AE2] mt-1.5 shrink-0" />
                     <span className="leading-relaxed">{item}</span>
@@ -365,11 +326,12 @@ export const ResumeIntelligencePage: React.FC = () => {
               </ul>
             </div>
           </div>
+          {currentReport.source !== 'legacy' && currentReport.rawText && <details className="rounded-xl border border-gray-200 bg-white p-4"><summary className="cursor-pointer text-sm font-semibold">Inspect parsed resume text</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap text-xs text-slate-700">{currentReport.rawText}</pre></details>}
         </div>
       )}
 
       {/* MULTI-POSTING MATCHING SECTION (JOBS & INTERNSHIPS) */}
-      {currentReport && (
+      {currentReport && currentReport.source !== 'legacy' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -476,7 +438,7 @@ export const ResumeIntelligencePage: React.FC = () => {
                 <div>
                   <p className="text-xs font-bold text-[#191C1D]">{report.fileName}</p>
                   <p className="text-[11px] text-[#737380]">
-                    {new Date(report.uploadedAt).toLocaleString()} • {report.targetRole}
+                  {new Date(report.uploadedAt).toLocaleString()} • {report.scoringVersion || 'Legacy result'}
                   </p>
                 </div>
               </div>

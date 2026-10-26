@@ -44,8 +44,7 @@ const storage = multer.diskStorage({
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimeTypes = [
     'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
     'image/jpeg',
     'image/png',
     'image/webp'
@@ -54,7 +53,9 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Unsupported file type. Please upload a PDF, DOCX, PNG, or JPG.'));
+    const error = new Error('Unsupported file type. Resume parsing supports PDF and plain text; profile images support PNG, JPG, or WebP.') as Error & { status?: number };
+    error.status = 415;
+    cb(error);
   }
 };
 

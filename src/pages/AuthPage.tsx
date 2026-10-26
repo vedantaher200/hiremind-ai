@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Bot, 
   Sparkles, 
@@ -51,6 +51,72 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [pendingApproval, setPendingApproval] = useState(false);
   const [adminSetupSuccess, setAdminSetupSuccess] = useState(false);
+  const submittingRef = useRef(false);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const googleLoginRef = useRef(loginWithGoogle);
+  const onSuccessRef = useRef(onSuccess);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  const [googleReady, setGoogleReady] = useState(false);
+  const [googleConfigError, setGoogleConfigError] = useState('');
+
+  googleLoginRef.current = loginWithGoogle;
+  onSuccessRef.current = onSuccess;
+
+  useEffect(() => {
+    if (mode !== 'login' || role === 'admin') return;
+    setGoogleReady(false);
+    if (!googleClientId) {
+      setGoogleReady(false);
+      setGoogleConfigError('Google sign-in is not configured for this deployment.');
+      return;
+    }
+    let cancelled = false;
+    const mountGoogleButton = () => {
+      if (cancelled || !googleButtonRef.current || !window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: async ({ credential }) => {
+          if (!credential || submittingRef.current) return;
+          submittingRef.current = true;
+          setLoading(true);
+          setMessage(null);
+          try {
+            const authenticatedUser = await googleLoginRef.current(credential, role);
+            onSuccessRef.current(authenticatedUser);
+          } catch (err: any) {
+            setMessageType('error');
+            setMessage(err?.message || 'Google Sign-In failed.');
+          } finally {
+            submittingRef.current = false;
+            setLoading(false);
+          }
+        }
+      });
+      googleButtonRef.current.replaceChildren();
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        type: 'standard', theme: 'outline', size: 'large', text: 'continue_with', shape: 'rectangular',
+        width: Math.min(420, googleButtonRef.current.clientWidth || 360)
+      });
+      setGoogleReady(true);
+      setGoogleConfigError('');
+    };
+    let script = document.getElementById('google-identity-services') as HTMLScriptElement | null;
+    if (window.google?.accounts?.id) mountGoogleButton();
+    else if (script) {
+      script.addEventListener('load', mountGoogleButton);
+      script.addEventListener('error', () => setGoogleConfigError('Google Identity Services failed to load. Check network access and retry.'));
+    } else {
+      script = document.createElement('script');
+      script.id = 'google-identity-services';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = mountGoogleButton;
+      script.onerror = () => setGoogleConfigError('Google Identity Services failed to load. Check network access and retry.');
+      document.head.appendChild(script);
+    }
+    return () => { cancelled = true; };
+  }, [mode, role, googleClientId]);
 
   const switchMode = (newMode: 'login' | 'register' | 'forgot') => {
     setMode(newMode);
@@ -67,6 +133,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setMessage(null);
 
@@ -78,30 +146,35 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setLoading(false);
         setMessageType('error');
         setMessage('Please enter your full name (minimum 2 characters).');
+        submittingRef.current = false;
         return;
       }
       if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         setLoading(false);
         setMessageType('error');
         setMessage('Please enter a valid email address.');
+        submittingRef.current = false;
         return;
       }
       if (password.length < 8) {
         setLoading(false);
         setMessageType('error');
         setMessage('Password must be at least 8 characters long.');
+        submittingRef.current = false;
         return;
       }
       if (password !== confirmPassword) {
         setLoading(false);
         setMessageType('error');
         setMessage('Passwords do not match. Please verify.');
+        submittingRef.current = false;
         return;
       }
       if (role === 'recruiter' && organizationWebsite && !/^https?:\/\/[^\s]+$/i.test(organizationWebsite)) {
         setLoading(false);
         setMessageType('error');
         setMessage('Please enter a valid organization website (e.g. https://example.com).');
+        submittingRef.current = false;
         return;
       }
     } else if (mode === 'login') {
@@ -109,6 +182,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         setLoading(false);
         setMessageType('error');
         setMessage('Email and password are required.');
+        submittingRef.current = false;
         return;
       }
     }
@@ -116,11 +190,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     try {
       if (mode === 'login') {
         const loggedInUser = await login(cleanEmail, password, role);
-        setLoading(false);
         onSuccess(loggedInUser);
       } else if (mode === 'register') {
         const result = await signup(cleanName, cleanEmail, password, role, organizationWebsite, companyName, adminSetupKey);
-        setLoading(false);
         if (result.status === 'confirmation_required') {
           switchMode('login');
           setMessageType('info');
@@ -146,7 +218,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         await resetPassword(cleanEmail);
         setMessageType('success');
         setMessage('If an account exists with this email, password reset instructions have been dispatched.');
-        setLoading(false);
       }
     } catch (err: any) {
       setLoading(false);
@@ -164,6 +235,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       } else {
         setMessage(err?.message || 'Authentication error occurred. Please try again.');
       }
+    } finally {
+      submittingRef.current = false;
+      setLoading(false);
     }
   };
 
@@ -178,25 +252,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setMessage(null);
     setPendingApproval(false);
     setAdminSetupSuccess(false);
-  };
-
-  const handleGoogleAuth = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const devPayload = {
-        email: role === 'candidate' ? 'rahul.google@example.com' : 'recruiter.google@example.com',
-        name: role === 'candidate' ? 'Rahul Mehta (Google)' : 'TechCorp Recruiter (Google)'
-      };
-      const token = btoa(JSON.stringify(devPayload));
-      const loggedInUser = await loginWithGoogle(token, role);
-      setLoading(false);
-      onSuccess(loggedInUser);
-    } catch (err: any) {
-      setLoading(false);
-      setMessageType('error');
-      setMessage(err?.message || 'Google Sign-In failed.');
-    }
   };
 
   return (
@@ -362,32 +417,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               {/* Google Sign-In Button */}
               {mode === 'login' && role !== 'admin' && (
                 <div className="mb-5">
-                  <button
-                    type="button"
-                    onClick={handleGoogleAuth}
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 py-2.5 px-4 border border-slate-300 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <svg className="w-4 h-4" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                      />
-                    </svg>
-                    <span>Sign in with Google ({role === 'candidate' ? 'Candidate' : 'Recruiter'})</span>
-                  </button>
+                  <div ref={googleButtonRef} className="flex min-h-10 w-full justify-center" aria-label="Google sign-in" />
+                  {!googleReady && <p className="mt-2 text-center text-[11px] text-amber-700">{googleConfigError || 'Loading Google sign-in…'}</p>}
 
                   <div className="relative my-4">
                     <div className="absolute inset-0 flex items-center">

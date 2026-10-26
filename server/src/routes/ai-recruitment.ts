@@ -3,8 +3,6 @@ import { GoogleGenAI } from '@google/genai';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { Role } from '@prisma/client';
-import { google } from 'googleapis';
-import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
@@ -31,17 +29,7 @@ router.post('/analyze-jd', requireAuth, requireRole(Role.RECRUITER), async (req:
       return res.json(JSON.parse(response.text || '{}'));
     }
 
-    // Mock response if no genAI
-    res.json({
-      mandatorySkills: ['React', 'Node.js'],
-      preferredSkills: ['AWS', 'Docker'],
-      education: 'Bachelor in CS',
-      experience: '2+ years',
-      location: 'Remote',
-      certifications: [],
-      responsibilities: ['Develop web apps'],
-      other: []
-    });
+    return res.status(503).json({ error: 'JD analysis is not configured. No analysis was generated.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -51,22 +39,11 @@ router.post('/analyze-jd', requireAuth, requireRole(Role.RECRUITER), async (req:
 router.post('/candidate-evidence', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
     const { candidateId, requirements } = req.body;
-    const candidate = await prisma.user.findUnique({ where: { id: candidateId }, include: { resumes: true } });
+    if (typeof candidateId !== 'string' || !Array.isArray(requirements)) return res.status(400).json({ error: 'Candidate ID and a requirements list are required.' });
+    const candidate = await prisma.user.findFirst({ where: { id: candidateId, applications: { some: { recruiterId: req.user!.id } } }, include: { resumes: true } });
     if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
     
-    // In a real implementation we would send the resume text + requirements to Gemini.
-    // For this demonstration we will return a structured evidence map.
-    res.json({
-      candidateId,
-      evidence: {
-        "React": { status: "Verified", source: "Resume - Project A", confidence: 95 },
-        "Node.js": { status: "Verified", source: "Skills array", confidence: 100 },
-        "AWS": { status: "Missing", source: "No evidence found", confidence: 0 },
-        "REST API": { status: "Inferred", source: "FastAPI project indicates REST knowledge", confidence: 80 }
-      },
-      matchScore: 85,
-      evidenceConfidence: 90
-    });
+    return res.status(501).json({ error: 'Evidence-grounded matching is not implemented for this account. No candidate score was generated.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -76,7 +53,8 @@ router.post('/candidate-evidence', requireAuth, requireRole(Role.RECRUITER), asy
 router.post('/ask-assistant', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
     const { question } = req.body;
-    res.json({ answer: `Based on authorized database data, the answer to "${question}" is processed. Candidates matching this have been filtered.` });
+    if (typeof question !== 'string' || !question.trim() || question.length > 1000) return res.status(400).json({ error: 'A question up to 1000 characters is required.' });
+    return res.status(503).json({ error: 'Recruiter assistant retrieval is not configured. No records were summarized.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -86,15 +64,10 @@ router.post('/ask-assistant', requireAuth, requireRole(Role.RECRUITER), async (r
 router.post('/compare-candidates', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
     const { candidateIds } = req.body;
-    res.json({
-      comparison: candidateIds.map((id: string) => ({
-        candidateId: id,
-        requirementCoverage: 80,
-        skills: ['React', 'Node.js'],
-        missingEvidence: ['AWS'],
-        verificationNeeds: ['Check references for team size']
-      }))
-    });
+    if (!Array.isArray(candidateIds) || candidateIds.length < 2 || candidateIds.length > 10 || candidateIds.some((id: unknown) => typeof id !== 'string')) return res.status(400).json({ error: 'Select between two and ten candidate IDs.' });
+    const records = await prisma.user.findMany({ where: { id: { in: candidateIds }, applications: { some: { recruiterId: req.user!.id } } }, select: { id: true } });
+    if (records.length !== new Set(candidateIds).size) return res.status(403).json({ error: 'One or more selected candidates are not authorized for your postings.' });
+    return res.status(501).json({ error: 'Candidate comparison is not implemented. No scores were generated.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -103,12 +76,7 @@ router.post('/compare-candidates', requireAuth, requireRole(Role.RECRUITER), asy
 /* ---------------- G. WHAT-IF RECRUITMENT SIMULATION ---------------- */
 router.post('/simulate', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
-    const { candidateId, simulatedRequirements } = req.body;
-    res.json({
-      candidateId,
-      simulatedMatchScore: 92,
-      changes: "Moving AWS from mandatory to preferred increased match score by 7%."
-    });
+    return res.status(501).json({ error: 'What-if simulation is not implemented. No simulated ranking was generated.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -116,37 +84,16 @@ router.post('/simulate', requireAuth, requireRole(Role.RECRUITER), async (req: R
 
 /* ---------------- H. OUTCOME / LEARNING ENGINE ---------------- */
 router.get('/outcomes', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
-  res.json({
-    analytics: {
-      applied: 120, reviewed: 40, shortlisted: 15, interview: 5, selected: 1
-    },
-    sampleSize: 120,
-    limitations: "Historical outcomes are for analytics only and do not automatically retrain the LLM."
-  });
+  try {
+    const rows = await prisma.application.groupBy({ by: ['status'], where: { recruiterId: req.user!.id }, _count: { _all: true } });
+    res.json({ analytics: Object.fromEntries(rows.map(row => [row.status.toLowerCase(), row._count._all])), sampleSize: rows.reduce((sum, row) => sum + row._count._all, 0), limitations: 'Outcome tracking only; no automatic model retraining.' });
+  } catch { res.status(500).json({ error: 'Unable to load outcome analytics.' }); }
 });
 
 /* ---------------- 5. GOOGLE MEET INTERVIEW AUTOMATION ---------------- */
 router.post('/schedule-meet', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
-    const { candidateId, date, time, durationMinutes = 60 } = req.body;
-    const recruiterId = req.user!.id;
-    
-    // In real implementation we'd use oauth2Client and calendar API:
-    // const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-    // Since credentials might be missing, mock a successful response safely.
-    const mockEventId = uuidv4();
-    const mockMeetUrl = `https://meet.google.com/mock-${mockEventId.substring(0,8)}`;
-
-    res.json({
-      eventId: mockEventId,
-      candidateId,
-      recruiterId,
-      date,
-      time,
-      duration: durationMinutes,
-      meetUrl: mockMeetUrl,
-      status: 'SCHEDULED'
-    });
+    return res.status(503).json({ error: 'Calendar event creation requires recruiter Google OAuth authorization. No meeting was created.' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

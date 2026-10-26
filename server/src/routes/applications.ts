@@ -146,9 +146,44 @@ router.get('/my-applications', requireAuth, requireRole(Role.CANDIDATE), async (
       orderBy: { appliedAt: 'desc' }
     });
 
-    res.json(applications);
+    // Internal recruiter notes are not part of the candidate-visible application payload.
+    res.json(applications.map(({ notes: _internalNotes, ...application }) => application));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch candidate applications.' });
+  }
+});
+
+/* Candidate feedback chat is scoped to the authenticated candidate's application. */
+router.post('/:id/feedback-chat', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, res: Response) => {
+  try {
+    const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
+    if (!question || question.length > 1000) return res.status(400).json({ error: 'Enter a question up to 1000 characters.' });
+    const application = await prisma.application.findFirst({
+      where: { id: req.params.id, candidateId: req.user!.id },
+      include: { job: true, internship: true, resume: { select: { extractedText: true } }, candidate: { select: { skills: true, education: true, experience: true } }, interviews: true }
+    });
+    if (!application) return res.status(404).json({ error: 'Application not found.' });
+    const posting = application.job || application.internship;
+    const facts = {
+      status: application.status,
+      jobDescription: posting?.description || '',
+      requirements: application.job?.requirements || application.job?.requiredSkills || application.internship?.skills || [],
+      sharedFeedback: application.shareableFeedback || null,
+      sharedCategories: application.feedbackCategories,
+      assessmentResults: application.interviews.map((item: any) => ({ status: item.status, score: item.overallScore, feedback: item.summaryFeedback })),
+      candidateEvidence: { skills: application.candidate.skills, education: application.candidate.education, experience: application.candidate.experience, resumeText: application.resume?.extractedText?.slice(0, 8000) || null }
+    };
+    if (!process.env.GEMINI_API_KEY) return res.json({ answer: application.shareableFeedback ? `Recorded facts: ${application.shareableFeedback}${application.feedbackCategories.length ? ` Categories: ${application.feedbackCategories.join(', ')}.` : ''}\n\nI can’t provide an AI-generated assessment right now because the assistant is not configured.` : 'No specific rejection reason has been provided by the recruiter. The stored application has no candidate-visible explanation. I can’t provide an AI-generated assessment right now because the assistant is not configured.', recordedFeedback: facts.sharedFeedback, suggestions: [] });
+    const { GoogleGenAI } = await import('@google/genai');
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Answer the candidate question using only the JSON evidence below. Clearly separate recorded facts from suggestions. Never infer or claim the rejection reason unless sharedFeedback explicitly records it. If absent, say no specific reason was provided. Suggestions must be labeled AI-generated and cannot be described as actual decision factors. Do not disclose private recruiter notes. If evidence is absent say so.\nEvidence: ${JSON.stringify(facts)}\nQuestion: ${question}`
+    });
+    res.json({ answer: result.text || 'I could not generate an answer from the available application evidence.', recordedFeedback: facts.sharedFeedback, suggestions: [] });
+  } catch (err: any) {
+    console.error('Candidate feedback chat failed:', err?.message || 'unknown error');
+    res.status(500).json({ error: 'Unable to answer from your application right now.' });
   }
 });
 
@@ -220,10 +255,16 @@ router.get('/recruiter', requireAuth, requireRole(Role.RECRUITER), async (req: R
 router.patch('/:id/status', requireAuth, requireRole(Role.RECRUITER), async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, shareableFeedback, feedbackCategories } = req.body;
 
     if (!status || !Object.values(ApplicationStatus).includes(status)) {
       return res.status(400).json({ error: 'Valid application status is required.' });
+    }
+    if (status === ApplicationStatus.REJECTED && (!String(shareableFeedback || '').trim() || String(shareableFeedback).trim().length > 2000)) {
+      return res.status(400).json({ error: 'A candidate-visible, factual rejection explanation (1–2000 characters) is required.' });
+    }
+    if (feedbackCategories !== undefined && (!Array.isArray(feedbackCategories) || feedbackCategories.some((item: unknown) => typeof item !== 'string' || item.length > 80))) {
+      return res.status(400).json({ error: 'Feedback categories must be a list of short text values.' });
     }
 
     const application = await prisma.application.findUnique({
@@ -246,6 +287,8 @@ router.patch('/:id/status', requireAuth, requireRole(Role.RECRUITER), async (req
       where: { id },
       data: {
         status: status as ApplicationStatus,
+        statusChangedAt: new Date(),
+        ...(status === ApplicationStatus.REJECTED && { shareableFeedback: String(shareableFeedback).trim(), feedbackCategories: feedbackCategories || [] }),
         ...(notes !== undefined && { notes: String(notes) }),
         updatedAt: new Date()
       }

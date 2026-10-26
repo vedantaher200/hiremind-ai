@@ -203,6 +203,9 @@ model Application {
   resume              Resume?           @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   scores              Json?             @default("{\"atsScore\":0,\"interviewScore\":0,\"codingScore\":0,\"aptitudeScore\":0,\"overallScore\":0}")
   notes               String?
+  shareableFeedback   String?           @db.Text
+  feedbackCategories  String[]          @default([])
+  statusChangedAt     DateTime?
   appliedAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -252,6 +255,8 @@ model ResumeAnalysis {
   educationSummary       String?        @db.Text
   recommendation         String?
   improvementSuggestions String[]       @default([])
+  scoringVersion         String?
+  skillEvidence          Json           @default("[]")
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
@@ -306,11 +311,12 @@ model ScheduledInterview {
   internship          Internship?    @relation(fields: [internshipId], references: [id], onDelete: SetNull)
   date                String
   time                String
+  timeZone            String?
   durationMinutes     Int            @default(45)
   interviewType       String         @default("Technical")
   mode                String         @default("Virtual (Google Meet)")
   meetingLink         String?
-  googleEventId       String?        // New field for Google Calendar Event ID
+  googleEventId       String?        @unique
   notes               String?
   status              String         @default("Scheduled")
   createdAt           DateTime       @default(now())

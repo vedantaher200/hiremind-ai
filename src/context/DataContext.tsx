@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   Job,
   Internship,
@@ -22,178 +22,6 @@ import {
 import { api, getToken } from '../lib/api';
 import { useAuth } from './AuthContext';
 import { createClientId } from '../lib/id';
-
-/* =========================================================
-   DEFAULT ASSESSMENT TESTS
-========================================================= */
-
-const DEFAULT_TESTS: AssessmentTest[] = [
-  {
-    id: 'aptitude-test-001',
-    title: 'General Aptitude Assessment',
-    description:
-      'Test your logical reasoning, quantitative aptitude, and problem-solving skills.',
-    category: 'Aptitude Test',
-    durationMinutes: 20,
-    totalQuestions: 5,
-    totalPoints: 20,
-    passingScore: 50,
-    questions: [
-      {
-        id: 'apt-1',
-        type: 'mcq',
-        question: 'What comes next in the sequence: 2, 6, 12, 20, 30, ?',
-        options: ['36', '40', '42', '44'],
-        correctOptionIndex: 2,
-        points: 4
-      },
-      {
-        id: 'apt-2',
-        type: 'mcq',
-        question:
-          'If 5 workers complete a task in 12 days, how many days will 10 workers take at the same rate?',
-        options: ['3 days', '6 days', '12 days', '24 days'],
-        correctOptionIndex: 1,
-        points: 4
-      },
-      {
-        id: 'apt-3',
-        type: 'mcq',
-        question:
-          'A product costs ₹800 and is sold at a 25% profit. What is the selling price?',
-        options: ['₹900', '₹950', '₹1000', '₹1200'],
-        correctOptionIndex: 2,
-        points: 4
-      },
-      {
-        id: 'apt-4',
-        type: 'mcq',
-        question: 'Which number is the odd one out?',
-        options: ['16', '25', '36', '45'],
-        correctOptionIndex: 3,
-        points: 4
-      },
-      {
-        id: 'apt-5',
-        type: 'mcq',
-        question: 'If today is Monday, what day will it be after 100 days?',
-        options: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-        correctOptionIndex: 1,
-        points: 4
-      }
-    ]
-  },
-  {
-    id: 'coding-test-001',
-    title: 'JavaScript & TypeScript Coding Challenge',
-    description:
-      'Evaluate your algorithms, data structures, and core programming skills.',
-    category: 'Coding Test',
-    durationMinutes: 30,
-    totalQuestions: 2,
-    totalPoints: 50,
-    passingScore: 60,
-    questions: [
-      {
-        id: 'code-1',
-        type: 'coding',
-        question:
-          'Write a function `twoSum(nums, target)` that returns indices of the two numbers such that they add up to target.',
-        starterCode: 'function twoSum(nums, target) {\n  // Your code here\n}',
-        sampleInput: 'nums = [2, 7, 11, 15], target = 9',
-        sampleOutput: '[0, 1]',
-        points: 25
-      },
-      {
-        id: 'code-2',
-        type: 'coding',
-        question:
-          'Write a function `isValid(s)` to determine if an input string with brackets `()[]{}` is valid.',
-        starterCode: 'function isValid(s) {\n  // Your code here\n}',
-        sampleInput: '"()[]{}"',
-        sampleOutput: 'true',
-        points: 25
-      }
-    ]
-  },
-  {
-    id: 'technical-mcq-001',
-    title: 'Full-Stack Technical Knowledge',
-    description:
-      'Evaluate your knowledge of React, JavaScript, APIs, databases, and modern software development.',
-    category: 'Technical MCQs',
-    durationMinutes: 25,
-    totalQuestions: 5,
-    totalPoints: 25,
-    passingScore: 50,
-    questions: [
-      {
-        id: 'tech-1',
-        type: 'mcq',
-        question: 'Which React Hook is primarily used to manage component state?',
-        options: ['useEffect', 'useState', 'useContext', 'useRef'],
-        correctOptionIndex: 1,
-        points: 5
-      },
-      {
-        id: 'tech-2',
-        type: 'mcq',
-        question: 'What does API stand for?',
-        options: [
-          'Application Programming Interface',
-          'Automated Program Integration',
-          'Application Process Interface',
-          'Advanced Programming Internet'
-        ],
-        correctOptionIndex: 0,
-        points: 5
-      },
-      {
-        id: 'tech-3',
-        type: 'mcq',
-        question: 'Which HTTP status code means "Not Found"?',
-        options: ['200', '201', '404', '500'],
-        correctOptionIndex: 2,
-        points: 5
-      },
-      {
-        id: 'tech-4',
-        type: 'mcq',
-        question: 'Which database is a relational database?',
-        options: ['MongoDB', 'Redis', 'PostgreSQL', 'Firebase'],
-        correctOptionIndex: 2,
-        points: 5
-      },
-      {
-        id: 'tech-5',
-        type: 'mcq',
-        question: 'What is TypeScript primarily?',
-        options: [
-          'A database',
-          'A superset of JavaScript',
-          'A CSS framework',
-          'An operating system'
-        ],
-        correctOptionIndex: 1,
-        points: 5
-      }
-    ]
-  }
-];
-
-/* =========================================================
-   HELPER MAPPERS
-========================================================= */
-
-const createEmptyScores = () => ({
-  atsScore: 0,
-  interviewScore: 0,
-  codingScore: 0,
-  aptitudeScore: 0,
-  communicationScore: 0,
-  behavioralScore: 0,
-  overallScore: 0
-});
 
 const mapBackendAppToFrontend = (app: any, currentUser?: UserProfile | null): Application => {
   const isJob = app.applicationType === 'JOB' || Boolean(app.jobId);
@@ -304,9 +132,9 @@ export interface DataContextType {
 
   addJob: (job: Omit<Job, 'id' | 'applicantCount' | 'createdAt'>) => Promise<void>;
   applyForJob: (jobId: string, candidate: UserProfile) => Promise<void>;
-  updateApplicationStatus: (appId: string, status: ApplicationStatus, rejectionFeedback?: string) => Promise<void>;
+  updateApplicationStatus: (appId: string, status: ApplicationStatus, rejectionReason?: string, shareRejectionReason?: boolean) => Promise<void>;
   saveResumeAnalysis: (analysis: ResumeAnalysis) => Promise<void>;
-  recordTestAttempt: (attempt: Omit<TestAttempt, 'id' | 'completedAt'>) => Promise<void>;
+  recordTestAttempt: (input: { testId: string; answers: Record<string, number>; timeSpentSeconds: number }) => Promise<TestAttempt>;
   updateInterviewResponse: (session: InterviewSession) => Promise<void>;
   scheduleInterview: (
     input: Omit<ScheduledInterview, 'id' | 'createdAt' | 'jobTitle' | 'candidateName' | 'recruiterId'>
@@ -332,6 +160,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [candidates, setCandidates] = useState<UserProfile[]>(SEED_CANDIDATES_LIST);
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumeAnalyses, setResumeAnalyses] = useState<ResumeAnalysis[]>([]);
+  const [tests, setTests] = useState<AssessmentTest[]>([]);
   const [testAttempts, setTestAttempts] = useState<TestAttempt[]>([]);
   const [resumeLoadError, setResumeLoadError] = useState<string | null>(null);
   const [candidateDataLoadError, setCandidateDataLoadError] = useState<string | null>(null);
@@ -525,7 +354,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setResumeAnalyses([]);
         }
 
-        // Candidate's test attempts
+        // Assessment content and attempts are loaded only from the persistent API.
+        const availableTests = await api.assessments.list().catch(() => {
+          candidateLoadErrors.push('assessment tests');
+          return [];
+        });
+        if (Array.isArray(availableTests)) {
+          setTests(availableTests
+            .filter((test: any) => Array.isArray(test.questions) && test.questions.length > 0 && test.questions.every((question: any) => question.type === 'mcq'))
+            .map((test: any) => ({ ...test, questions: test.questions.map((question: any) => ({ ...question, correctOptionIndex: undefined })) })));
+        }
+
+        // Candidate's persisted test attempts
         const attempts = await api.assessments.myAttempts().catch(() => {
           candidateLoadErrors.push('assessments');
           return [];
@@ -544,7 +384,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
               percentage: att.percentage,
               status: att.passed ? 'Passed' : 'Failed',
               timeSpentMinutes: Math.round((att.timeSpentSeconds || 0) / 60),
-              answers: {}
+              answers: {},
+              categoryScores: att.categoryScores || {},
+              questionResults: att.questionResults || [],
+              strengths: att.strengths || [],
+              improvementAreas: att.improvementAreas || [],
+              improvementSuggestions: att.improvementSuggestions || []
             }))
           );
         }
@@ -563,6 +408,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     setApplications([]);
     setResumeAnalyses([]);
+    setTests([]);
     setTestAttempts([]);
     setScheduledInterviews([]);
     setInterviewSession(null);
@@ -699,13 +545,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
      UPDATE APPLICATION STATUS
   ========================================================= */
 
-  const updateApplicationStatus = async (appId: string, status: ApplicationStatus, rejectionFeedback?: string) => {
+  const updateApplicationStatus = async (appId: string, status: ApplicationStatus, rejectionReason?: string, shareRejectionReason = false) => {
     const backendStatus = mapFrontendStatusToBackend(status);
 
-    const result = await api.applications.updateStatus(appId, backendStatus, undefined, rejectionFeedback);
+    const result = await api.applications.updateStatus(appId, backendStatus, undefined, rejectionReason, shareRejectionReason);
 
     setApplications(prev =>
-      prev.map(app => (app.id === appId ? { ...app, status, shareableFeedback: result.application.shareableFeedback || app.shareableFeedback } : app))
+      prev.map(app => (app.id === appId ? {
+        ...app,
+        status,
+        shareableFeedback: result.application.shareableFeedback || undefined,
+        feedbackCategories: result.application.feedbackCategories || []
+      } : app))
     );
 
     addNotification(
@@ -747,42 +598,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
      RECORD TEST ATTEMPT
   ========================================================= */
 
-  const recordTestAttempt = async (attemptData: Omit<TestAttempt, 'id' | 'completedAt'>) => {
+  const recordTestAttempt = async (input: { testId: string; answers: Record<string, number>; timeSpentSeconds: number }): Promise<TestAttempt> => {
+    const response = await api.assessments.submit(input.testId, input.answers, input.timeSpentSeconds);
+    const saved = response.attempt;
     const attempt: TestAttempt = {
-      ...attemptData,
-      id: createClientId('att'),
-      completedAt: new Date().toISOString()
+      id: saved.id,
+      testId: saved.testId,
+      testTitle: saved.test?.title || 'Assessment',
+      category: saved.test?.category || 'Assessment',
+      candidateId: saved.candidateId,
+      completedAt: saved.completedAt,
+      score: saved.score,
+      totalPoints: saved.maxScore,
+      percentage: saved.percentage,
+      status: saved.passed ? 'Passed' : 'Failed',
+      timeSpentMinutes: Math.ceil((saved.timeSpentSeconds || 0) / 60),
+      answers: input.answers,
+      categoryScores: saved.categoryScores || {},
+      questionResults: saved.questionResults || [],
+      strengths: saved.strengths || [],
+      improvementAreas: saved.improvementAreas || [],
+      improvementSuggestions: saved.improvementSuggestions || []
     };
-
     setTestAttempts(prev => [attempt, ...prev]);
-
-    // Update candidate's test score in applications state
-    setApplications(prev =>
-      prev.map(app => {
-        if (app.candidateId !== attempt.candidateId) return app;
-        const updatedScores = { ...app.scores };
-        if (attempt.category === 'Coding Test') {
-          updatedScores.codingScore = attempt.percentage;
-        } else if (attempt.category === 'Aptitude Test') {
-          updatedScores.aptitudeScore = attempt.percentage;
-        } else {
-          updatedScores.codingScore = Math.round((updatedScores.codingScore + attempt.percentage) / 2);
-        }
-        return {
-          ...app,
-          scores: {
-            ...updatedScores,
-            overallScore: calculateOverallScore(updatedScores)
-          }
-        };
-      })
-    );
-
     addNotification(
       'Test Completed',
       `Scored ${attempt.percentage}% on ${attempt.testTitle}.`,
       attempt.status === 'Passed' ? 'success' : 'alert'
     );
+    return attempt;
   };
 
   /* =========================================================
@@ -871,7 +715,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         latestResume,
         resumeLoadError,
         candidateDataLoadError,
-        tests: DEFAULT_TESTS,
+        tests,
         testAttempts,
         interviewSession,
         scheduledInterviews,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import {
   Mail,
   MapPin,
@@ -17,17 +17,19 @@ import {
 import confetti from 'canvas-confetti';
 import { useData } from '../../context/DataContext';
 import { PageHeader } from '../../components/common/PageHeader';
-import { CircularScore } from '../../components/common/CircularScore';
 import { StatusBadge } from '../../components/common/StatusBadge';
 import { Modal } from '../../components/common/Modal';
+import { api } from '../../lib/api';
 
 interface CandidateDetailsPageProps {
   candidateId?: string;
+  applicationId?: string;
   onNavigate: (page: string, candidateId?: string) => void;
 }
 
 export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   candidateId,
+  applicationId,
   onNavigate
 }) => {
   const {
@@ -47,7 +49,12 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   const [interviewMode, setInterviewMode] = useState<'Online' | 'Offline'>('Online');
   const [isScheduling, setIsScheduling] = useState(false);
   const [rejectionFeedback, setRejectionFeedback] = useState('');
+  const [shareRejectionReason, setShareRejectionReason] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
+  const [evaluationAttempts, setEvaluationAttempts] = useState<any[]>([]);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
+  const [evaluationError, setEvaluationError] = useState('');
 
   const [notesList, setNotesList] = useState<string[]>([
     'Candidate assessment and recruiter observations will appear here.'
@@ -63,7 +70,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
     null;
 
   const application = candidate
-    ? applications.find(
+    ? applications.find(app => app.id === applicationId && app.candidateId === candidate.id) || applications.find(
         (a) => a.candidateId === candidate.id
       ) ||
       applications.find(
@@ -71,6 +78,21 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
       ) ||
       null
     : null;
+
+  useEffect(() => {
+    if (!application) {
+      setEvaluationAttempts([]);
+      return;
+    }
+    let cancelled = false;
+    setEvaluationLoading(true);
+    setEvaluationError('');
+    api.applications.evaluations(application.id)
+      .then((attempts) => { if (!cancelled) setEvaluationAttempts(attempts); })
+      .catch((error) => { if (!cancelled) setEvaluationError(error instanceof Error ? error.message : 'Unable to load saved assessment results.'); })
+      .finally(() => { if (!cancelled) setEvaluationLoading(false); });
+    return () => { cancelled = true; };
+  }, [application?.id]);
 
   const handleAddNote = () => {
     if (!newNote.trim()) return;
@@ -142,15 +164,20 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
   };
 
   const handleReject = async () => {
-    if (!application || !rejectionFeedback.trim()) { setActionError('Add a factual, job-related explanation to share with the candidate.'); return; }
+    if (!application || (shareRejectionReason && !rejectionFeedback.trim())) { setActionError('Enter a reason before choosing to share it.'); return; }
 
     try {
       await updateApplicationStatus(
         application.id,
         'Rejected',
-        rejectionFeedback.trim()
+        rejectionFeedback.trim(),
+        shareRejectionReason
       );
 
+      setActionSuccess('Application rejection saved.');
+      setRejectionFeedback('');
+      setShareRejectionReason(false);
+      setActionError('');
       setRejectModal(false);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Unable to save rejection feedback.');
@@ -242,18 +269,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
       ? candidate.education
       : [];
 
-  const scores = application?.scores || {
-    atsScore: 0,
-    interviewScore: 0,
-    codingScore: 0,
-    aptitudeScore: 0,
-    communicationScore: 0,
-    behavioralScore: 0,
-    overallScore: 0
-  };
-
-  const overallScore =
-    scores.overallScore || 0;
+  const latestEvaluation = evaluationAttempts[0];
 
   return (
     <div className="space-y-6">
@@ -299,9 +315,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             <button
               type="button"
               disabled={!application}
-              onClick={() =>
-                setRejectModal(true)
-              }
+              onClick={() => { setActionError(''); setActionSuccess(''); setRejectModal(true); }}
               className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl border border-rose-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Reject
@@ -309,6 +323,9 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
           </div>
         }
       />
+
+      {actionSuccess && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{actionSuccess}</p>}
+      {actionError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{actionError}</p>}
 
       {!application && (
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
@@ -390,29 +407,11 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             </div>
           </div>
 
-          {/* Match Score */}
-          <div className="p-5 bg-gradient-to-br from-indigo-50/90 to-purple-50/90 rounded-2xl border border-indigo-100 text-center space-y-2">
-            <span className="text-[10px] font-bold text-[#737380] uppercase tracking-wider block">
-              Overall Match Score
-            </span>
-
-            <div className="flex justify-center">
-              <CircularScore
-                score={overallScore}
-                size={110}
-                strokeWidth={10}
-              />
-            </div>
-
-            <p className="text-xs font-bold text-[#3525CD] mt-2">
-              {overallScore >= 80
-                ? 'Excellent Candidate Fit'
-                : overallScore >= 60
-                ? 'Strong Candidate Potential'
-                : overallScore > 0
-                ? 'Assessment In Progress'
-                : 'Awaiting Assessment Data'}
-            </p>
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#737380]">Persisted Assessment Results</p>
+            {evaluationLoading ? <p className="mt-2 text-sm text-[#737380]">Loading saved resultsâ€¦</p>
+              : latestEvaluation ? <p className="mt-2 text-sm font-bold text-[#3525CD]">{latestEvaluation.percentage}% Â· {latestEvaluation.testTitle}</p>
+              : <p className="mt-2 text-sm text-[#737380]">No saved assessment score is available.</p>}
           </div>
 
           {/* Recruiter Notes */}
@@ -462,57 +461,27 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
 
         {/* Right Column */}
         <div className="lg:col-span-8 space-y-6">
-          {/* Score Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-2xl border border-[#E5E7EB] shadow-sm text-center">
-              <FileText className="w-5 h-5 text-[#3525CD] mx-auto mb-1.5" />
-
-              <span className="text-[10px] font-bold text-[#737380] uppercase block">
-                ATS Resume
-              </span>
-
-              <span className="text-xl font-black text-[#191C1D]">
-                {scores.atsScore}%
-              </span>
+          <section className="rounded-3xl border border-[#E5E7EB] bg-white p-6 shadow-sm space-y-4" aria-labelledby="saved-assessments-title">
+            <div>
+              <h3 id="saved-assessments-title" className="text-sm font-bold uppercase tracking-wider text-[#191C1D]">Persisted Assessment Evidence</h3>
+              <p className="mt-1 text-xs text-[#737380]">Scores and evidence below come from saved assessment attempts. No combined match or interview score is calculated here.</p>
             </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-[#E5E7EB] shadow-sm text-center">
-              <Video className="w-5 h-5 text-[#712AE2] mx-auto mb-1.5" />
-
-              <span className="text-[10px] font-bold text-[#737380] uppercase block">
-                AI Interview
-              </span>
-
-              <span className="text-xl font-black text-[#712AE2]">
-                {scores.interviewScore}%
-              </span>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-[#E5E7EB] shadow-sm text-center">
-              <Code className="w-5 h-5 text-emerald-600 mx-auto mb-1.5" />
-
-              <span className="text-[10px] font-bold text-[#737380] uppercase block">
-                Coding Test
-              </span>
-
-              <span className="text-xl font-black text-emerald-700">
-                {scores.codingScore}%
-              </span>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl border border-[#E5E7EB] shadow-sm text-center">
-              <Sparkles className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
-
-              <span className="text-[10px] font-bold text-[#737380] uppercase block">
-                Communication
-              </span>
-
-              <span className="text-xl font-black text-amber-600">
-                {scores.communicationScore}%
-              </span>
-            </div>
-          </div>
-
+            {evaluationLoading && <p className="text-sm text-[#737380]">Loading saved assessment results…</p>}
+            {evaluationError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{evaluationError}</p>}
+            {!evaluationLoading && !evaluationError && evaluationAttempts.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-sm text-[#737380]">No persisted assessment results are available for this applicant. Scheduled interviews do not yet have saved evaluation records.</p>}
+            {evaluationAttempts.map((attempt) => (
+              <article key={attempt.id} className="rounded-2xl border border-slate-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h4 className="font-bold text-[#191C1D]">{attempt.testTitle}</h4><p className="text-xs text-[#737380]">{attempt.category} · {new Date(attempt.completedAt).toLocaleString()}</p></div>
+                  <span className="rounded-lg bg-indigo-50 px-3 py-1.5 text-sm font-black text-indigo-800">{attempt.percentage}% ({attempt.score}/{attempt.maxScore})</span>
+                </div>
+                {Object.keys(attempt.categoryScores || {}).length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2">{Object.entries(attempt.categoryScores).map(([category, score]) => <div key={category} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs"><span>{category}</span><strong>{score as number}%</strong></div>)}</div>}
+                {attempt.strengths?.length > 0 && <p className="mt-3 text-xs"><strong>Demonstrated strengths:</strong> {attempt.strengths.join(', ')}</p>}
+                {attempt.improvementAreas?.length > 0 && <p className="mt-2 text-xs"><strong>Practice areas:</strong> {attempt.improvementAreas.join(', ')}</p>}
+                {attempt.improvementSuggestions?.length > 0 && <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[#464555]">{attempt.improvementSuggestions.map((item: string, index: number) => <li key={`${attempt.id}-suggestion-${index}`}>{item}</li>)}</ul>}
+              </article>
+            ))}
+          </section>
           {/* Core Skills */}
           <div className="bg-white p-6 rounded-3xl border border-[#E5E7EB] shadow-[0_10px_30px_-5px_rgba(79,70,229,0.04)]">
             <h3 className="text-sm font-bold text-[#191C1D] uppercase tracking-wider mb-3">
@@ -614,7 +583,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
                         <p className="text-xs text-[#464555]">
                           {edu.field}
                           {edu.institution
-                            ? ` • ${edu.institution}`
+                            ? ` â€¢ ${edu.institution}`
                             : ''}
                         </p>
                       </div>
@@ -717,10 +686,8 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
       >
         <div className="space-y-4 text-xs">
           <p className="text-[#737380]">
-            Generate and extend an official compensation offer
-            letter for <strong>{candidateName}</strong> based on
-            the current qualification score of{' '}
-            <strong>{overallScore}%</strong>.
+            Prepare an offer for <strong>{candidateName}</strong>
+            after reviewing the saved application and assessment evidence.
           </p>
 
           <div>
@@ -765,10 +732,13 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
         maxWidth="sm"
       >
         <div className="space-y-4 text-xs">
-          <p className="text-[#737380]">
-            Record a factual, job-related explanation. This text is shared with <strong>{candidateName}</strong> and may be discussed in their feedback chat.
-          </p>
-          <textarea value={rejectionFeedback} onChange={event => setRejectionFeedback(event.target.value)} maxLength={2000} rows={4} placeholder="Explain which job-related requirements were not demonstrated." className="w-full rounded-xl border border-gray-200 p-3 text-sm" />
+          <p className="text-[#737380]">Record a factual, job-related reason. It stays private unless you explicitly approve sharing it with <strong>{candidateName}</strong>.</p>
+          <label htmlFor="official-rejection-reason" className="block font-semibold text-[#464555]">Official rejection reason (optional unless sharing)</label>
+          <textarea id="official-rejection-reason" value={rejectionFeedback} onChange={event => setRejectionFeedback(event.target.value)} maxLength={2000} rows={4} placeholder="Record the job-related reason, if provided." className="w-full rounded-xl border border-gray-200 p-3 text-sm" />
+          <label className="flex items-start gap-2 text-sm text-[#464555]">
+            <input type="checkbox" checked={shareRejectionReason} onChange={event => setShareRejectionReason(event.target.checked)} className="mt-0.5 rounded" />
+            <span>Share this official reason with the candidate and allow the feedback assistant to use it.</span>
+          </label>
           {actionError && <p role="alert" className="text-sm text-rose-700">{actionError}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
@@ -785,7 +755,7 @@ export const CandidateDetailsPage: React.FC<CandidateDetailsPageProps> = ({
             <button
               type="button"
               onClick={handleReject}
-              disabled={!rejectionFeedback.trim()}
+              disabled={shareRejectionReason && !rejectionFeedback.trim()}
               className="px-5 py-2 bg-rose-600 text-white font-bold rounded-xl"
             >
               Confirm Rejection

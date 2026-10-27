@@ -32,15 +32,13 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
     return testAttempts
       .filter(
         attempt =>
-          !attempt.candidateId ||
-          attempt.candidateId === user?.id
+          Boolean(user?.id) && attempt.candidateId === user?.id
       )
       .map(attempt => ({
         assessment: attempt.testTitle || 'Assessment Test',
-        score: attempt.score ?? 0,
-        maxScore: attempt.totalPoints ?? 0,
-        percentage: `${attempt.percentage ?? 0}%`,
-        percentageValue: attempt.percentage ?? 0,
+        score: attempt.score,
+        maxScore: attempt.totalPoints,
+        percentageValue: typeof attempt.percentage === 'number' ? attempt.percentage : null,
         date: attempt.completedAt
           ? new Date(attempt.completedAt).toLocaleDateString('en-US', {
               month: 'short',
@@ -50,42 +48,8 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
           : 'Recently completed',
         category: attempt.category || 'Assessment',
         status: attempt.status || 'Completed'
-      }))
-      .reverse();
+      }));
   }, [testAttempts, user?.id]);
-
-  const overallScore = useMemo(() => {
-    if (rows.length === 0) {
-      return 0;
-    }
-
-    const totalPercentage = rows.reduce(
-      (total, row) => total + row.percentageValue,
-      0
-    );
-
-    return Math.round(totalPercentage / rows.length);
-  }, [rows]);
-
-  const overallStatus =
-    overallScore >= 80
-      ? 'Excellent'
-      : overallScore >= 70
-      ? 'Strong Recommended'
-      : overallScore >= 50
-      ? 'Developing'
-      : 'Needs Improvement';
-
-  const overallDescription =
-    rows.length === 0
-      ? 'Complete your available assessments to generate a comprehensive performance analysis and overall candidate score.'
-      : overallScore >= 80
-      ? 'Excellent performance across completed assessments. Your results demonstrate strong technical and problem-solving capabilities.'
-      : overallScore >= 70
-      ? 'Candidate demonstrates strong overall potential with solid performance across the completed assessments.'
-      : overallScore >= 50
-      ? 'Candidate demonstrates developing capabilities. Completing additional practice and assessments can help strengthen the overall profile.'
-      : 'More improvement is recommended. Review your completed assessments and focus on strengthening weaker areas.';
 
   const handleExport = () => {
     window.print();
@@ -169,16 +133,16 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
                     </td>
 
                     <td className="px-6 py-4 font-bold text-[#191C1D]">
-                      {row.score}
+                      {typeof row.score === 'number' ? row.score : 'Not recorded'}
                     </td>
 
                     <td className="px-6 py-4 text-[#737380]">
-                      {row.maxScore}
+                      {typeof row.maxScore === 'number' ? row.maxScore : 'Not recorded'}
                     </td>
 
                     <td className="px-6 py-4">
                       <span className="px-2.5 py-1 bg-indigo-50 text-[#3525CD] rounded-lg font-bold">
-                        {row.percentage}
+                        {row.percentageValue !== null ? `${row.percentageValue}%` : 'Not recorded'}
                       </span>
                     </td>
 
@@ -229,27 +193,22 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
         )}
       </div>
 
-      {/* Overall Score Card */}
+      {/* Latest verified assessment */}
       <div className="bg-gradient-to-br from-white to-indigo-50/40 p-8 rounded-3xl border border-indigo-100 shadow-[0_20px_50px_-10px_rgba(79,70,229,0.08)] grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-4 flex flex-col items-center justify-center text-center">
-          <CircularScore
-            score={overallScore}
-            size={160}
-            strokeWidth={14}
-            label="Overall Score"
-          />
+          {rows.length > 0 && rows[0].percentageValue !== null
+            ? <CircularScore score={rows[0].percentageValue} size={160} strokeWidth={14} label="Latest Assessment" />
+            : <p className="py-12 text-sm font-semibold text-[#737380]">No verified score recorded</p>}
 
           <span
             className={`mt-3 text-xs font-bold px-3 py-1 rounded-full ${
-              overallScore >= 70
+              rows.length > 0 && rows[0].percentageValue !== null && rows[0].percentageValue >= 70
                 ? 'text-[#3525CD] bg-indigo-50'
                 : 'text-[#737380] bg-gray-100'
             }`}
           >
             {rows.length > 0
-              ? `${rows.length} Assessment${
-                  rows.length > 1 ? 's' : ''
-                } Completed`
+              ? `Latest of ${rows.length} completed assessment${rows.length > 1 ? 's' : ''}`
               : 'Awaiting Assessments'}
           </span>
         </div>
@@ -259,16 +218,18 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
             <Sparkles className="w-5 h-5 text-[#712AE2]" />
 
             <span className="text-xs font-bold uppercase tracking-wider text-[#712AE2]">
-              HireMind Performance Analysis
+              Persisted Assessment Result
             </span>
           </div>
 
           <h3 className="text-2xl font-extrabold text-[#191C1D] leading-tight">
-            Overall Candidate Potential: {overallStatus}
+            {rows.length > 0 ? rows[0].assessment : 'No assessment result yet'}
           </h3>
 
           <p className="text-sm text-[#464555] leading-relaxed">
-            {overallDescription}
+            {rows.length > 0
+              ? `This is the most recently recorded assessment result from ${rows[0].date}. Scores are shown per assessment and are not combined into a hiring recommendation.`
+              : 'Complete an evaluation test to see persisted scores and detailed performance evidence here.'}
           </p>
 
           <div className="pt-3 flex flex-wrap items-center gap-4">
@@ -309,13 +270,12 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
               <BrainCircuit className="w-4 h-4 text-[#3525CD]" />
 
               <h4 className="font-bold text-[#3525CD]">
-                Overall Performance
+                Persisted Results
               </h4>
             </div>
 
             <p className="text-[#464555]">
-              Your current overall score is based on the results of all
-              completed assessments recorded in your profile.
+              Each row below is a saved assessment result. Results are presented individually and are not combined into an overall hiring score.
             </p>
           </div>
 
@@ -337,7 +297,7 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
 
                 <div className="text-right">
                   <p className="font-bold text-[#3525CD]">
-                    {row.percentage}
+                        {row.percentageValue !== null ? `${row.percentageValue}%` : 'Not recorded'}
                   </p>
 
                   <p className="text-[10px] text-[#737380]">
@@ -348,20 +308,19 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({ onNavigate }) => {
             ))}
           </div>
 
-          <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-3">
+          {rows.length > 0 && rows[0].percentageValue !== null && <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-3">
             <TrendingUp className="w-5 h-5 text-emerald-600 shrink-0" />
 
             <div>
               <h4 className="font-bold text-emerald-800">
-                Current Overall Score: {overallScore}%
+                Latest Assessment Score: {rows[0].percentageValue}%
               </h4>
 
               <p className="text-emerald-700 mt-1">
-                Continue completing assessments to build a more comprehensive
-                candidate performance profile.
+                This value comes from the saved assessment result.
               </p>
             </div>
-          </div>
+          </div>}
         </div>
       </Modal>
     </div>

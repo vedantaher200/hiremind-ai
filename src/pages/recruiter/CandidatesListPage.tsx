@@ -18,7 +18,7 @@ import { StatusBadge } from '../../components/common/StatusBadge';
 import { ApplicationStatus } from '../../types';
 
 interface CandidatesListPageProps {
-  onNavigate: (page: string, candidateId?: string) => void;
+  onNavigate: (page: string, candidateId?: string, applicationId?: string) => void;
 }
 
 export const CandidatesListPage: React.FC<CandidatesListPageProps> = ({ onNavigate }) => {
@@ -251,14 +251,15 @@ export const CandidatesListPage: React.FC<CandidatesListPageProps> = ({ onNaviga
                       <option value="Technical">Technical</option>
                       <option value="Offer">Offer</option>
                       <option value="Hired">Hired</option>
-                      <option value="Rejected">Rejected</option>
+                      <option value="Rejected" disabled>Rejected</option>
                     </select>
+                    <p className="mt-1 text-[10px] text-gray-500">Use Profile to reject and choose feedback visibility.</p>
                   </td>
 
                   {/* Actions */}
                   <td className="px-6 py-4 text-right">
                     <button
-                      onClick={() => onNavigate('candidate-details', app.candidateId)}
+                      onClick={() => onNavigate('candidate-details', app.candidateId, app.id)}
                       className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#3525CD] to-[#712AE2] text-white text-xs font-bold shadow-xs hover:opacity-95 transition-opacity"
                     >
                       Profile &rarr;

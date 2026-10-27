@@ -46,6 +46,7 @@ const MainAppContent: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authRole, setAuthRole] = useState<UserRole>('candidate');
   const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string>('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const hasMounted = React.useRef(false);
@@ -82,10 +83,11 @@ const MainAppContent: React.FC = () => {
     }
   }, [isLoading, isAuthenticated, user, currentPage]);
 
-  const handleNavigate = (page: string, candidateId?: string) => {
+  const handleNavigate = (page: string, candidateId?: string, applicationId?: string) => {
     if (candidateId) {
       setSelectedCandidateId(candidateId);
     }
+    if (page === 'candidate-details') setSelectedApplicationId(applicationId || '');
 
     setCurrentPage(page);
     setMobileMenuOpen(false);
@@ -294,6 +296,7 @@ const MainAppContent: React.FC = () => {
         return (
           <CandidateDetailsPage
             candidateId={selectedCandidateId}
+            applicationId={selectedApplicationId}
             onNavigate={handleNavigate}
           />
         );

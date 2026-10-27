@@ -204,6 +204,9 @@ model Application {
   scores              Json?             @default("{\"atsScore\":0,\"interviewScore\":0,\"codingScore\":0,\"aptitudeScore\":0,\"overallScore\":0}")
   notes               String?
   shareableFeedback   String?           @db.Text
+  rejectionReason     String?           @db.Text
+  shareRejectionReason Boolean          @default(false)
+  shareableFeedbackUpdatedAt DateTime?
   feedbackCategories  String[]          @default([])
   statusChangedAt     DateTime?
   appliedAt           DateTime          @default(now())
@@ -291,6 +294,11 @@ model TestAttempt {
   percentage          Float
   passed              Boolean
   timeSpentSeconds    Int            @default(0)
+  categoryScores      Json           @default("{}")
+  questionResults     Json           @default("[]")
+  strengths           String[]       @default([])
+  improvementAreas    String[]       @default([])
+  improvementSuggestions String[]    @default([])
   completedAt         DateTime       @default(now())
 
   @@index([candidateId])

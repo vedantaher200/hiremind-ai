@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useData } from '../../context/DataContext';
-import { AssessmentTest } from '../../types';
+import { AssessmentTest, TestAttempt } from '../../types';
 import { Modal } from '../../components/common/Modal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -19,9 +19,7 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
   const { tests, testAttempts, recordTestAttempt } = useData();
   const { user } = useAuth();
 
-  const [activeCategory, setActiveCategory] = useState<
-    'Aptitude Test' | 'Coding Test' | 'Technical MCQs'
-  >('Aptitude Test');
+  const [activeCategory, setActiveCategory] = useState('');
 
   const [agreeRules, setAgreeRules] = useState(true);
 
@@ -36,6 +34,7 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
     score: number;
     maxPoints: number;
     percentage: number;
+    passed: boolean;
   } | null>(null);
 
   // Keep latest values available for timer
@@ -56,10 +55,9 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
     timeRemainingRef.current = timeRemaining;
   }, [timeRemaining]);
 
-  const currentSelectedTest =
-    tests.find((t) => t.category === activeCategory) ||
-    tests[0] ||
-    null;
+  const availableCategories = [...new Set(tests.map(test => test.category))];
+  const selectedCategory = availableCategories.includes(activeCategory) ? activeCategory : availableCategories[0] || '';
+  const currentSelectedTest = tests.find(test => test.category === selectedCategory) || null;
 
   const recentAttempt =
     testAttempts.length > 0
@@ -74,47 +72,14 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
     hasSubmittedRef.current = true;
 
     const latestAnswers = answersRef.current;
-    const latestCodeDrafts = codeDraftsRef.current;
-
-    let pointsEarned = 0;
-
-    activeTest.questions.forEach((q) => {
-      if (q.type === 'mcq') {
-        if (latestAnswers[q.id] === q.correctOptionIndex) {
-          pointsEarned += q.points;
-        }
-      } else if (q.type === 'coding') {
-        const code = latestCodeDrafts[q.id] || '';
-
-        if (code.includes('return') && code.length > 40) {
-          pointsEarned += q.points;
-        } else if (code.trim().length > 0) {
-          pointsEarned += Math.round(q.points * 0.5);
-        }
-      }
-    });
-
-    const percentage =
-      activeTest.totalPoints > 0
-        ? Math.round((pointsEarned / activeTest.totalPoints) * 100)
-        : 0;
-
-    const timeSpentSeconds =
-      activeTest.durationMinutes * 60 - timeRemainingRef.current;
-
-    if (!user) return;
+    const timeSpentSeconds = Math.max(0, activeTest.durationMinutes * 60 - timeRemainingRef.current);
+    if (!user) { hasSubmittedRef.current = false; return; }
+    let savedAttempt: TestAttempt;
     try {
-      await recordTestAttempt({
-      testId: activeTest.id,
-      testTitle: activeTest.title,
-      category: activeTest.category,
-      candidateId: user.id,
-      score: pointsEarned,
-      totalPoints: activeTest.totalPoints,
-      percentage,
-      status: percentage >= 70 ? 'Passed' : 'Failed',
-      timeSpentMinutes: Math.max(1, Math.ceil(timeSpentSeconds / 60)),
-      answers: latestAnswers
+      savedAttempt = await recordTestAttempt({
+        testId: activeTest.id,
+        answers: latestAnswers,
+        timeSpentSeconds
       });
     } catch (error) {
       hasSubmittedRef.current = false;
@@ -123,14 +88,15 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
     }
 
     setResultModal({
-      score: pointsEarned,
-      maxPoints: activeTest.totalPoints,
-      percentage
+      score: savedAttempt.score,
+      maxPoints: savedAttempt.totalPoints,
+      percentage: savedAttempt.percentage,
+      passed: savedAttempt.status === 'Passed'
     });
 
     setActiveTest(null);
 
-    if (percentage >= 70) {
+    if (savedAttempt.status === 'Passed') {
       try {
         confetti({
           particleCount: 70,
@@ -452,18 +418,12 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
         <div className="space-y-6">
           {/* Category Tabs */}
           <div className="flex items-center gap-2 border-b border-[#E5E7EB] pb-3">
-            {(
-              [
-                'Aptitude Test',
-                'Coding Test',
-                'Technical MCQs'
-              ] as const
-            ).map((cat) => (
+            {availableCategories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  activeCategory === cat
+                  selectedCategory === cat
                     ? 'bg-[#3525CD] text-white shadow-xs'
                     : 'text-[#464555] hover:bg-[#F8F9FA] hover:text-[#191C1D]'
                 }`}
@@ -663,12 +623,12 @@ export const TestsPage: React.FC<TestsPageProps> = ({ onNavigate }) => {
 
             <div
               className={`p-4 rounded-2xl text-xs font-medium ${
-                resultModal.percentage >= 70
+                resultModal.passed
                   ? 'bg-emerald-50 text-emerald-800'
                   : 'bg-red-50 text-red-800'
               }`}
             >
-              {resultModal.percentage >= 70
+              {resultModal.passed
                 ? 'Congratulations! You passed the assessment.'
                 : 'Your assessment result has been recorded. You can review your results for more details.'}
             </div>

@@ -5,108 +5,136 @@ import { Role } from '@prisma/client';
 
 const router = Router();
 
-/* ---------------- LIST ALL ASSESSMENT TESTS ---------------- */
-router.get('/', async (req: Request, res: Response) => {
+function redactAnswerKey<T extends { questions: unknown }>(test: T) {
+  const questions = Array.isArray(test.questions) ? test.questions : [];
+  return {
+    ...test,
+    questions: questions.map((value: any) => {
+      if (!value || typeof value !== 'object') return value;
+      const { correctOptionIndex: _answerKey, ...question } = value;
+      return question;
+    })
+  };
+}
+
+router.get('/', async (_req: Request, res: Response) => {
   try {
-    const tests = await prisma.assessmentTest.findMany({
-      orderBy: { createdAt: 'desc' }
-    });
-    res.json(tests);
+    const tests = await prisma.assessmentTest.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(tests.map(redactAnswerKey));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch assessments.' });
   }
 });
 
-/* ---------------- GET SINGLE ASSESSMENT TEST ---------------- */
+/* Keep this named route above /:id so it cannot be consumed as a test ID. */
+router.get('/my-attempts', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, res: Response) => {
+  try {
+    const attempts = await prisma.testAttempt.findMany({
+      where: { candidateId: req.user!.id },
+      include: { test: { select: { title: true, category: true } } },
+      orderBy: { completedAt: 'desc' }
+    });
+    res.json(attempts.map(({ test, ...attempt }) => ({ ...attempt, test })));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to fetch assessment attempts.' });
+  }
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const test = await prisma.assessmentTest.findUnique({ where: { id } });
-    if (!test) {
-      return res.status(404).json({ error: 'Assessment test not found.' });
-    }
-    res.json(test);
+    const test = await prisma.assessmentTest.findUnique({ where: { id: req.params.id } });
+    if (!test) return res.status(404).json({ error: 'Assessment test not found.' });
+    res.json(redactAnswerKey(test));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to fetch assessment.' });
   }
 });
 
-/* ---------------- CANDIDATE: SUBMIT TEST ATTEMPT ---------------- */
 router.post('/:id/submit', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { answers, timeSpentSeconds } = req.body;
-
-    const test = await prisma.assessmentTest.findUnique({ where: { id } });
-    if (!test) {
-      return res.status(404).json({ error: 'Assessment test not found.' });
+    const { answers, timeSpentSeconds } = req.body || {};
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return res.status(400).json({ error: 'Assessment answers must be an object keyed by question ID.' });
+    }
+    if (!Number.isInteger(timeSpentSeconds) || timeSpentSeconds < 0 || timeSpentSeconds > 86400) {
+      return res.status(400).json({ error: 'Time spent must be a whole number of seconds from 0 to 86400.' });
     }
 
-    const questions = test.questions as any[];
-    let earnedPoints = 0;
-    let totalPoints = 0;
+    const test = await prisma.assessmentTest.findUnique({ where: { id: req.params.id } });
+    if (!test) return res.status(404).json({ error: 'Assessment test not found.' });
+    const questions = Array.isArray(test.questions) ? test.questions as any[] : [];
+    if (!questions.length || questions.some((question) => question?.type !== 'mcq' || !Array.isArray(question.options) || question.options.length < 2 || !Number.isInteger(question.correctOptionIndex) || question.correctOptionIndex < 0 || question.correctOptionIndex >= question.options.length)) {
+      return res.status(422).json({ error: 'This assessment contains unsupported or incomplete questions and cannot be scored.' });
+    }
+    const questionIds = new Set(questions.map((question) => question.id));
+    if (questions.some((question) => typeof question.id !== 'string') || Object.keys(answers).some((questionId) => !questionIds.has(questionId))) {
+      return res.status(400).json({ error: 'Answers contain an unknown question ID.' });
+    }
 
-    questions.forEach((q: any) => {
-      const qPoints = q.points || 5;
-      totalPoints += qPoints;
-      if (answers && answers[q.id] !== undefined) {
-        if (answers[q.id] === q.correctOptionIndex) {
-          earnedPoints += qPoints;
-        }
+    const categoryTotals = new Map<string, { earned: number; possible: number }>();
+    const questionResults = questions.map((question) => {
+      const category = typeof question.category === 'string' && question.category.trim() ? question.category.trim() : test.category;
+      const points = Number.isFinite(question.points) && question.points > 0 ? question.points : 1;
+      const selected = answers[question.id];
+      if (selected !== undefined && (!Number.isInteger(selected) || selected < 0 || selected >= question.options.length)) {
+        throw new Error(`Invalid selected option for question ${question.id}.`);
       }
+      const correct = selected !== undefined && selected === question.correctOptionIndex;
+      const totals = categoryTotals.get(category) || { earned: 0, possible: 0 };
+      totals.possible += points;
+      if (correct) totals.earned += points;
+      categoryTotals.set(category, totals);
+      return {
+        questionId: question.id,
+        question: String(question.question || ''),
+        category,
+        selectedOptionIndex: selected === undefined ? null : selected,
+        correct,
+        earnedPoints: correct ? points : 0,
+        maxPoints: points
+      };
     });
 
-    const percentage = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0;
-    const passed = percentage >= test.passingScore;
+    const maxScore = questionResults.reduce((sum, result) => sum + result.maxPoints, 0);
+    if (maxScore <= 0) return res.status(422).json({ error: 'This assessment has no scoreable points.' });
+    const score = questionResults.reduce((sum, result) => sum + result.earnedPoints, 0);
+    const percentage = Math.round((score / maxScore) * 100);
+    const categoryScores = Object.fromEntries([...categoryTotals.entries()].map(([category, totals]) => [
+      category,
+      Math.round((totals.earned / totals.possible) * 100)
+    ]));
+    // Evaluation labels are deterministic: >=80% indicates demonstrated strength; <70% indicates a practice area.
+    const strengths = Object.entries(categoryScores).filter(([, value]) => value >= 80).map(([category]) => category);
+    const improvementAreas = Object.entries(categoryScores).filter(([, value]) => value < 70).map(([category]) => category);
+    const improvementSuggestions = improvementAreas.map((category) =>
+      `Practice ${category} with short exercises, then review the reasoning for each missed question.`
+    );
 
     const attempt = await prisma.testAttempt.create({
       data: {
-        testId: id,
+        testId: test.id,
         candidateId: req.user!.id,
-        score: earnedPoints,
-        maxScore: totalPoints,
+        score,
+        maxScore,
         percentage,
-        passed,
-        timeSpentSeconds: Number(timeSpentSeconds) || 0
+        passed: percentage >= test.passingScore,
+        timeSpentSeconds,
+        categoryScores,
+        questionResults,
+        strengths,
+        improvementAreas,
+        improvementSuggestions
       },
       include: { test: { select: { title: true, category: true } } }
     });
-
-    // Update candidate score in related applications
-    await prisma.application.updateMany({
-      where: { candidateId: req.user!.id },
-      data: {
-        scores: {
-          atsScore: 75,
-          interviewScore: 0,
-          codingScore: percentage,
-          aptitudeScore: percentage,
-          overallScore: Math.round((75 + percentage) / 2)
-        }
-      }
-    });
-
     res.status(201).json({
-      message: passed ? 'Assessment Passed!' : 'Assessment Completed.',
+      message: attempt.passed ? 'Assessment passed and saved.' : 'Assessment completed and saved.',
       attempt
     });
   } catch (err: any) {
-    console.error('Test submission error:', err);
-    res.status(500).json({ error: err.message || 'Failed to submit test attempt.' });
-  }
-});
-
-/* ---------------- GET CANDIDATE'S TEST ATTEMPTS ---------------- */
-router.get('/my-attempts', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, res: Response) => {
-  try {
-    const attempts = await prisma.testAttempt.findMany({
-      where: { candidateId: req.user!.id },
-      include: { test: true },
-      orderBy: { completedAt: 'desc' }
-    });
-    res.json(attempts);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to fetch test attempts.' });
+    if (err?.message?.startsWith('Invalid selected option')) return res.status(400).json({ error: err.message });
+    console.error('Assessment submission error:', err?.message || 'unknown error');
+    res.status(500).json({ error: 'Failed to score and save assessment.' });
   }
 });
 

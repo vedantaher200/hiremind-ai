@@ -269,12 +269,23 @@ export const api = {
       if (params?.applicationType) query.set('applicationType', params.applicationType);
       return request<any[]>(`/applications/recruiter${query.toString() ? `?${query.toString()}` : ''}`);
     },
-    updateStatus: (id: string, status: string, notes?: string, rejectionFeedback?: string) =>
+    updateStatus: (id: string, status: string, notes?: string, rejectionReason?: string, shareRejectionReason?: boolean) =>
       request<{ message: string; application: any }>(`/applications/${id}/status`, {
         method: 'PATCH',
-        body: JSON.stringify({ status, notes, shareableFeedback: rejectionFeedback })
+        body: JSON.stringify({ status, notes, rejectionReason, shareRejectionReason })
       }),
-    askFeedback: (id: string, question: string) => request<{ answer: string; recordedFeedback: string | null; suggestions: string[] }>(`/applications/${id}/feedback-chat`, { method: 'POST', body: JSON.stringify({ question }) })
+    evaluations: (id: string) => request<any[]>(`/applications/${id}/evaluations`),
+    askFeedback: (id: string, question: string) => request<{
+      recordedFacts: {
+        applicationStatus: string;
+        rejectionReason: string | null;
+        rejectionReasonUpdatedAt: string | null;
+        assessments: any[];
+      };
+      recommendations: string[];
+      recommendationSource: 'gemini' | 'deterministic';
+      fallbackNotice?: string;
+    }>(`/applications/${id}/feedback-chat`, { method: 'POST', body: JSON.stringify({ question }) })
   },
 
   resumes: {

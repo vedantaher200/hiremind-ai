@@ -330,10 +330,7 @@ export interface AssessmentTest {
 
   title: string;
 
-  category:
-    | 'Aptitude Test'
-    | 'Coding Test'
-    | 'Technical MCQs';
+  category: string;
 
   description: string;
 
@@ -370,6 +367,20 @@ export interface TestAttempt {
   timeSpentMinutes: number;
 
   answers: Record<string, any>;
+
+  categoryScores?: Record<string, number>;
+  questionResults?: Array<{
+    questionId: string;
+    question: string;
+    category: string;
+    selectedOptionIndex: number | null;
+    correct: boolean;
+    earnedPoints: number;
+    maxPoints: number;
+  }>;
+  strengths?: string[];
+  improvementAreas?: string[];
+  improvementSuggestions?: string[];
 
   // Assessment insights
   correctAnswers?: number;

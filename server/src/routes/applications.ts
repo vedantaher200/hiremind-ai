@@ -10,7 +10,7 @@ router.post('/', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, 
   try {
     const { jobId, internshipId, resumeId, notes } = req.body;
 
-    if (!jobId && !internshipId) {
+    if ((!jobId && !internshipId) || (jobId && internshipId)) {
       return res.status(400).json({ error: 'Please specify either a jobId or internshipId.' });
     }
 
@@ -22,7 +22,7 @@ router.post('/', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, 
     let postingTitle = '';
 
     if (jobId) {
-      const job = await prisma.job.findUnique({ where: { id: jobId } });
+      const job = await prisma.job.findFirst({ where: { id: jobId, status: 'ACTIVE' } });
       if (!job) return res.status(404).json({ error: 'Job posting not found.' });
       recruiterId = job.recruiterId;
       companyId = job.companyId;
@@ -36,7 +36,7 @@ router.post('/', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, 
         return res.status(400).json({ error: 'You have already applied for this job.' });
       }
     } else if (internshipId) {
-      const internship = await prisma.internship.findUnique({ where: { id: internshipId } });
+      const internship = await prisma.internship.findFirst({ where: { id: internshipId, status: 'ACTIVE' } });
       if (!internship) return res.status(404).json({ error: 'Internship posting not found.' });
       recruiterId = internship.recruiterId;
       companyId = internship.companyId;
@@ -66,11 +66,11 @@ router.post('/', requireAuth, requireRole(Role.CANDIDATE), async (req: Request, 
 
     // Default scores based on latest analysis if available
     let scoresObj: any = {
-      atsScore: 75,
+      atsScore: 0,
       interviewScore: 0,
       codingScore: 0,
       aptitudeScore: 0,
-      overallScore: 75
+      overallScore: 0
     };
 
     if (resolvedResumeId) {

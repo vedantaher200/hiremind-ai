@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import fs from 'fs';
+import path from 'path';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -7,6 +8,36 @@ import { Role, PostingStatus } from '@prisma/client';
 import { scoreResumeText } from '../services/resumeScoring.js';
 
 const router = Router();
+
+/* Resume files are private: only the owner or a recruiter with an application
+   linked to that resume can retrieve them. */
+router.get('/:id/file', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const where = req.user!.role === Role.ADMIN
+      ? { id: req.params.id }
+      : {
+          id: req.params.id,
+          OR: [
+            { candidateId: req.user!.id },
+            { applications: { some: { recruiterId: req.user!.id } } }
+          ]
+        };
+    const resume = await prisma.resume.findFirst({ where });
+    if (!resume) return res.status(404).json({ error: 'Resume not found or access denied.' });
+
+    const uploadDir = process.env.UPLOAD_DIR || (process.env.VERCEL ? path.join('/tmp', 'uploads') : './uploads');
+    const resumeDirectory = path.resolve(uploadDir, 'resumes');
+    const filePath = path.resolve(resumeDirectory, path.basename(resume.storagePath));
+    const relativeFilePath = path.relative(resumeDirectory, filePath);
+    if (relativeFilePath.startsWith('..') || path.isAbsolute(relativeFilePath) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Resume file is unavailable.' });
+    }
+    res.download(filePath, resume.fileName);
+  } catch (err: any) {
+    console.error('Resume download error:', err?.message || 'unknown error');
+    res.status(500).json({ error: 'Unable to retrieve resume.' });
+  }
+});
 
 /* ---------------- UPLOAD RESUME & EXTRACT TEXT ---------------- */
 router.post(
@@ -203,8 +234,9 @@ router.get('/match-all', requireAuth, requireRole(Role.CANDIDATE), async (req: R
     ]);
 
     // Matching Algorithm
-    const calculateMatch = (requiredSkills: string[], preferredSkills: string[] = []) => {
-      if (!requiredSkills || requiredSkills.length === 0) return 75; // Baseline if no skills required
+    const calculateMatch = (requiredSkills: string[], preferredSkills: string[] = []): number | null => {
+      // Do not manufacture a match score when either side has no evidence.
+      if (candidateSkillsLower.length === 0 || !requiredSkills || requiredSkills.length === 0) return null;
 
       let matchedCount = 0;
       requiredSkills.forEach((reqSkill) => {
@@ -236,7 +268,8 @@ router.get('/match-all', requireAuth, requireRole(Role.CANDIDATE), async (req: R
       location: job.location,
       department: job.department,
       requiredSkills: job.requiredSkills,
-      matchScore: calculateMatch(job.requiredSkills, job.preferredSkills)
+      matchScore: calculateMatch(job.requiredSkills, job.preferredSkills),
+      matchStatus: candidateSkillsLower.length === 0 || job.requiredSkills.length === 0 ? 'INSUFFICIENT_EVIDENCE' : 'SCORED'
     }));
 
     const internshipMatches = activeInternships.map((internship) => ({
@@ -247,12 +280,13 @@ router.get('/match-all', requireAuth, requireRole(Role.CANDIDATE), async (req: R
       location: internship.location,
       department: internship.department,
       requiredSkills: internship.skills,
-      matchScore: calculateMatch(internship.skills)
+      matchScore: calculateMatch(internship.skills),
+      matchStatus: candidateSkillsLower.length === 0 || internship.skills.length === 0 ? 'INSUFFICIENT_EVIDENCE' : 'SCORED'
     }));
 
     // Combine and sort by match score descending
     const allMatches = [...jobMatches, ...internshipMatches].sort(
-      (a, b) => b.matchScore - a.matchScore
+      (a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1)
     );
 
     res.json({

@@ -66,6 +66,10 @@ try {
     if (response.status !== 201 || !body.resumeId) throw new Error(`upload status ${response.status}`);
     resumeId = body.resumeId;
     if (body.extractedText !== resumeText) throw new Error('extracted text differs from synthetic input');
+    const fileResponse = await fetch(`${baseUrl}/resumes/${resumeId}/file`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (fileResponse.status !== 200 || await fileResponse.text() !== resumeText) throw new Error('owner could not retrieve the private resume file');
   });
 
   await check('resume scoring persists deterministic component scores and evidence', async () => {
@@ -96,8 +100,12 @@ try {
       method: 'POST', headers: { Authorization: `Bearer ${outsider.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ resumeId })
     });
+    const fileResponse = await fetch(`${baseUrl}/resumes/${resumeId}/file`, {
+      headers: { Authorization: `Bearer ${outsider.token}` }
+    });
     await prisma.user.deleteMany({ where: { id: outsider.user.id } });
     if (response.status !== 404) throw new Error(`cross-account analysis status ${response.status}`);
+    if (fileResponse.status !== 404) throw new Error(`cross-account resume download status ${fileResponse.status}`);
   });
 
   await check('unreadable resume analysis is rejected without a successful score', async () => {

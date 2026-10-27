@@ -253,7 +253,7 @@ const mapBackendAppToFrontend = (app: any, currentUser?: UserProfile | null): Ap
       behavioralScore: Number(rawScores.behavioralScore) || 0,
       overallScore: Number(rawScores.overallScore) || 0
     },
-    resumeUrl: app.resume?.storagePath ? `/uploads/resumes/${app.resume.storagePath}` : undefined,
+    resumeUrl: app.resume?.id ? `/api/resumes/${app.resume.id}/file` : undefined,
     notes: app.notes || undefined,
     shareableFeedback: app.shareableFeedback || undefined,
     feedbackCategories: app.feedbackCategories || []

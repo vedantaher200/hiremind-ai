@@ -294,7 +294,7 @@ router.get('/candidates', async (req: Request, res: Response) => {
       resumes: c.resumes.map(r => ({
         id: r.id,
         fileName: r.fileName,
-        fileUrl: r.storagePath.startsWith('http') ? r.storagePath : `/uploads/${r.storagePath}`,
+        fileUrl: `/api/resumes/${r.id}/file`,
         atsScore: r.analyses?.[0]?.atsScore || 0,
         createdAt: r.createdAt
       }))

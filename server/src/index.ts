@@ -1,9 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
-
-dotenv.config();
 
 import { prisma } from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
@@ -34,11 +32,12 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (like mobile apps, curl, or same-origin)
+      // Allow non-browser clients and same-origin requests. In production,
+      // browser clients must use an explicitly configured origin.
       if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
         callback(null, true);
       } else {
-        callback(null, true);
+        callback(new Error('Origin is not allowed by CORS.'));
       }
     },
     credentials: true,
@@ -50,13 +49,10 @@ app.use(
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Static file serving for uploads (resumes, documents, avatars)
+// Profile avatars are intentionally visible within the product. Keep resumes
+// and verification documents out of static hosting; they use authorized routes.
 const uploadDir = process.env.UPLOAD_DIR || (process.env.VERCEL ? path.join('/tmp', 'uploads') : './uploads');
-try {
-  app.use('/uploads', express.static(path.resolve(uploadDir)));
-} catch (e) {
-  // Graceful fallback in read-only environment
-}
+app.use('/uploads/avatars', express.static(path.resolve(uploadDir, 'avatars')));
 
 // Router with all API endpoints
 const apiRouter = express.Router();

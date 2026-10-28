@@ -13,6 +13,16 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const googleClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
+// A Google OAuth client ID is a public browser identifier, not a client secret.
+// Only advertise Google sign-in when the backend has the verifier configured.
+router.get('/google/config', (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    enabled: Boolean(googleClient && GOOGLE_CLIENT_ID),
+    clientId: googleClient && GOOGLE_CLIENT_ID ? GOOGLE_CLIENT_ID : null
+  });
+});
+
 const generateToken = (user: { id: string; email: string; role: Role }) => {
   if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured.');
   return jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, {
@@ -232,12 +242,15 @@ router.post('/register-admin', async (req: Request, res: Response) => {
 /* ---------------- UNIFIED LOGIN ---------------- */
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password, expectedRole } = req.body;
-    if (!email || !password) {
+    const { email, password, expectedRole } = req.body || {};
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || password.length === 0) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ error: 'Enter a valid email address.' });
+    }
     const user = await prisma.user.findUnique({
       where: { email: cleanEmail },
       include: { company: true }

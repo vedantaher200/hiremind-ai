@@ -67,6 +67,8 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   auth: {
+    googleConfig: () => request<{ enabled: boolean; clientId: string | null }>('/auth/google/config'),
+
     registerCandidate: (data: { name: string; email: string; password: string }) =>
       request<{ message: string; token: string; user: any }>('/auth/register-candidate', {
         method: 'POST',

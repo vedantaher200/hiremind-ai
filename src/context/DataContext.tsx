@@ -14,10 +14,7 @@ import {
   ApplicationStatus
 } from '../types';
 import { 
-  DEFAULT_WEIGHTS, 
-  SEED_JOBS, 
-  SEED_INTERNSHIPS, 
-  SEED_CANDIDATES_LIST
+  DEFAULT_WEIGHTS
 } from '../data/seedData';
 import { api, getToken } from '../lib/api';
 import { useAuth } from './AuthContext';
@@ -155,9 +152,9 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
 
-  const [jobs, setJobs] = useState<Job[]>(SEED_JOBS);
-  const [internships, setInternships] = useState<Internship[]>(SEED_INTERNSHIPS);
-  const [candidates, setCandidates] = useState<UserProfile[]>(SEED_CANDIDATES_LIST);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [internships, setInternships] = useState<Internship[]>([]);
+  const [candidates, setCandidates] = useState<UserProfile[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumeAnalyses, setResumeAnalyses] = useState<ResumeAnalysis[]>([]);
   const [tests, setTests] = useState<AssessmentTest[]>([]);
@@ -178,7 +175,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // 1. Fetch public / active jobs
       const fetchedJobs = await api.jobs.list().catch(() => []);
-      if (Array.isArray(fetchedJobs) && fetchedJobs.length > 0) {
+      if (Array.isArray(fetchedJobs)) {
         setJobs(
           fetchedJobs.map((j: any) => ({
             id: j.id,
@@ -201,7 +198,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 2. Fetch active internships
       const fetchedInternships = await api.internships.list().catch(() => []);
-      if (Array.isArray(fetchedInternships) && fetchedInternships.length > 0) {
+      if (Array.isArray(fetchedInternships)) {
         setInternships(fetchedInternships);
       }
 
@@ -283,7 +280,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Recruiter's own jobs (to include drafts or closed)
         const myJobsData = await api.jobs.myJobs().catch(() => []);
-        if (Array.isArray(myJobsData) && myJobsData.length > 0) {
+        if (Array.isArray(myJobsData)) {
           const mappedMyJobs = myJobsData.map((j: any) => ({
             id: j.id,
             title: j.title,

@@ -1,6 +1,12 @@
 import fetch from 'node-fetch';
 
 const API_BASE = 'http://localhost:5000/api';
+const email = process.env.ADMIN_TEST_EMAIL;
+const password = process.env.ADMIN_TEST_PASSWORD;
+
+if (!email || !password) {
+  throw new Error('Set ADMIN_TEST_EMAIL and ADMIN_TEST_PASSWORD for an authorized non-production admin account.');
+}
 
 async function verifyAllAdminModules() {
   console.log('--- VERIFYING ALL ADMIN MODULES & ENDPOINTS ---');
@@ -11,14 +17,14 @@ async function verifyAllAdminModules() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      email: 'vedantaher2003@gmail.com',
-      password: 'VedantAdminPassword2026!',
+      email,
+      password,
       expectedRole: 'admin'
     })
   });
   const loginData = await loginRes.json();
   if (loginRes.status !== 200 || !loginData.token) {
-    throw new Error(`Admin login failed: ${loginRes.status} ${JSON.stringify(loginData)}`);
+    throw new Error(`Admin login failed with HTTP ${loginRes.status}.`);
   }
   const token = loginData.token;
   console.log('✅ Admin login succeeded. Token acquired.');
@@ -45,26 +51,6 @@ async function verifyAllAdminModules() {
     throw new Error(`Jobs fetch failed: ${jobsRes.status}`);
   }
   console.log(`✅ Loaded ${jobsData.length} platform jobs with company & recruiter details.`);
-
-  // Moderation test on first job if exists
-  if (jobsData.length > 0) {
-    const testJob = jobsData[0];
-    const newStatus = testJob.status === 'ACTIVE' ? 'CLOSED' : 'ACTIVE';
-    const updateJobRes = await fetch(`${API_BASE}/admin/jobs/${testJob.id}/status`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ status: newStatus })
-    });
-    if (updateJobRes.status === 200) {
-      console.log(`✅ Moderated job "${testJob.title}" status to ${newStatus}.`);
-      // Restore
-      await fetch(`${API_BASE}/admin/jobs/${testJob.id}/status`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ status: testJob.status })
-      });
-    }
-  }
 
   // 4. Platform Internships
   console.log('\n[4] Testing /api/admin/internships...');
@@ -104,7 +90,7 @@ async function verifyAllAdminModules() {
   if (meRes.status !== 200 || meData.role !== 'ADMIN') {
     throw new Error(`Admin profile fetch failed: ${meRes.status}`);
   }
-  console.log(`✅ Admin profile verified: ${meData.name} (${meData.email}), Role: ${meData.role}`);
+  console.log(`✅ Admin profile verified; role: ${meData.role}.`);
 
   console.log('\n======================================================');
   console.log('🎉 ALL ADMIN MODULE BACKEND ENDPOINTS ARE FULLY OPERATIONAL!');

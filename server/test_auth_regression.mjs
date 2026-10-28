@@ -39,6 +39,21 @@ try {
     if (response.status !== 400) throw new Error(`unexpected status ${response.status}`);
   });
 
+  await check('missing login fields are rejected with a validation response', async () => {
+    const response = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+    });
+    if (response.status !== 400) throw new Error(`unexpected status ${response.status}`);
+  });
+
+  await check('malformed login email is rejected before credential lookup', async () => {
+    const response = await fetch(`${baseUrl}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email', password })
+    });
+    if (response.status !== 400) throw new Error(`unexpected status ${response.status}`);
+  });
+
   await check('invalid password is rejected', async () => {
     const response = await fetch(`${baseUrl}/auth/login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -77,6 +92,12 @@ try {
     if (response.status !== 401) throw new Error(`unexpected status ${response.status}`);
   });
 
+  await check('Google configuration endpoint reports only a consistent enabled state', async () => {
+    const response = await fetch(`${baseUrl}/auth/google/config`);
+    const body = await json(response);
+    if (response.status !== 200 || body.enabled !== Boolean(body.clientId)) throw new Error(`unexpected config response ${response.status}`);
+  });
+
   await check('invalid Google credential is rejected or reports missing configuration', async () => {
     const response = await fetch(`${baseUrl}/auth/google`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -85,7 +106,7 @@ try {
     if (![401, 503].includes(response.status)) throw new Error(`unexpected status ${response.status}`);
   });
 
-  console.log(`Authentication API regression checks passed: ${passed}/8`);
+  console.log(`Authentication API regression checks passed: ${passed}/11`);
 } finally {
   await prisma.user.deleteMany({ where: { email } }).catch(() => undefined);
   await prisma.$disconnect();

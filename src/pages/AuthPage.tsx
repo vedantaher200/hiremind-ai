@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserProfile, UserRole } from '../types';
+import { api } from '../lib/api';
 
 interface AuthPageProps {
   initialMode?: 'login' | 'register';
@@ -47,6 +48,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [organizationWebsite, setOrganizationWebsite] = useState('');
   const [adminSetupKey, setAdminSetupKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<'success' | 'error' | 'info'>('info');
   const [pendingApproval, setPendingApproval] = useState(false);
@@ -55,7 +57,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleLoginRef = useRef(loginWithGoogle);
   const onSuccessRef = useRef(onSuccess);
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const [googleConfigError, setGoogleConfigError] = useState('');
 
@@ -64,13 +66,27 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
   useEffect(() => {
     if (mode !== 'login' || role === 'admin') return;
-    setGoogleReady(false);
-    if (!googleClientId) {
-      setGoogleReady(false);
-      setGoogleConfigError('Google sign-in is not configured for this deployment.');
-      return;
-    }
     let cancelled = false;
+    setGoogleReady(false);
+    setGoogleConfigError('');
+    setGoogleClientId(null);
+    api.auth.googleConfig()
+      .then((configuration) => {
+        if (!cancelled && configuration.enabled && configuration.clientId) {
+          setGoogleClientId(configuration.clientId);
+        }
+      })
+      .catch(() => {
+        // Keep email sign-in available and hide Google when the server cannot confirm its configuration.
+      });
+    return () => { cancelled = true; };
+  }, [mode, role]);
+
+  useEffect(() => {
+    if (mode !== 'login' || role === 'admin' || !googleClientId) return;
+    let cancelled = false;
+    setGoogleReady(false);
+    setGoogleConfigError('');
     const mountGoogleButton = () => {
       if (cancelled || !googleButtonRef.current || !window.google?.accounts?.id) return;
       window.google.accounts.id.initialize({
@@ -104,7 +120,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     if (window.google?.accounts?.id) mountGoogleButton();
     else if (script) {
       script.addEventListener('load', mountGoogleButton);
-      script.addEventListener('error', () => setGoogleConfigError('Google Identity Services failed to load. Check network access and retry.'));
+      const onScriptError = () => setGoogleConfigError('Google sign-in could not load. Check your connection or use email and password.');
+      script.addEventListener('error', onScriptError);
+      return () => {
+        cancelled = true;
+        script?.removeEventListener('load', mountGoogleButton);
+        script?.removeEventListener('error', onScriptError);
+      };
     } else {
       script = document.createElement('script');
       script.id = 'google-identity-services';
@@ -112,7 +134,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       script.async = true;
       script.defer = true;
       script.onload = mountGoogleButton;
-      script.onerror = () => setGoogleConfigError('Google Identity Services failed to load. Check network access and retry.');
+      script.onerror = () => setGoogleConfigError('Google sign-in could not load. Check your connection or use email and password.');
       document.head.appendChild(script);
     }
     return () => { cancelled = true; };
@@ -127,6 +149,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setConfirmPassword('');
     setAdminSetupKey('');
     setMessage(null);
+    setFieldErrors({});
     setPendingApproval(false);
     setAdminSetupSuccess(false);
   };
@@ -135,7 +158,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     e.preventDefault();
     if (submittingRef.current) return;
     submittingRef.current = true;
-    setLoading(true);
     setMessage(null);
 
     const cleanEmail = email.trim();
@@ -178,15 +200,21 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         return;
       }
     } else if (mode === 'login') {
-      if (!cleanEmail || !password) {
-        setLoading(false);
-        setMessageType('error');
-        setMessage('Email and password are required.');
+      const errors: { email?: string; password?: string } = {};
+      if (!cleanEmail) errors.email = 'Enter your email address.';
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) errors.email = 'Enter a valid email address.';
+      if (!password) errors.password = 'Enter your password.';
+      setFieldErrors(errors);
+      if (Object.keys(errors).length > 0) {
+        setMessage(null);
         submittingRef.current = false;
         return;
       }
+    } else {
+      setFieldErrors({});
     }
 
+    setLoading(true);
     try {
       if (mode === 'login') {
         const loggedInUser = await login(cleanEmail, password, role);
@@ -415,10 +443,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               )}
 
               {/* Google Sign-In Button */}
-              {mode === 'login' && role !== 'admin' && (
+              {mode === 'login' && role !== 'admin' && googleClientId && (
                 <div className="mb-5">
                   <div ref={googleButtonRef} className="flex min-h-10 w-full justify-center" aria-label="Google sign-in" />
-                  {!googleReady && <p className="mt-2 text-center text-[11px] text-amber-700">{googleConfigError || 'Loading Google sign-in…'}</p>}
+                  {!googleReady && <p role="status" className="mt-2 text-center text-[11px] text-amber-700">{googleConfigError || 'Loading Google sign-in…'}</p>}
 
                   <div className="relative my-4">
                     <div className="absolute inset-0 flex items-center">
@@ -431,7 +459,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 </div>
               )}
 
-              <form className="space-y-3" onSubmit={handleSubmit}>
+              <form className="space-y-3" onSubmit={handleSubmit} noValidate={mode === 'login'}>
                 {mode === 'register' && (
                   <div>
                     <label className="block text-xs font-bold text-[#464555] uppercase tracking-wider">
@@ -500,14 +528,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     <Mail className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="email"
-                      required
+                      required={mode !== 'login'}
+                      aria-invalid={Boolean(fieldErrors.email)}
+                      aria-describedby={fieldErrors.email ? 'signin-email-error' : undefined}
                       autoComplete="email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => { setEmail(e.target.value); setFieldErrors((current) => ({ ...current, email: undefined })); }}
                       placeholder={role === 'admin' ? 'admin@hiremind.ai' : 'name@example.com'}
                       className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
                     />
                   </div>
+                  {mode === 'login' && fieldErrors.email && <p id="signin-email-error" className="mt-1 text-xs text-rose-700" role="alert">{fieldErrors.email}</p>}
                 </div>
 
                 {mode !== 'forgot' && (
@@ -530,14 +561,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <Lock className="w-4 h-4 text-[#8E8EA0] absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="password"
-                        required
+                        required={mode !== 'login'}
+                        aria-invalid={Boolean(fieldErrors.password)}
+                        aria-describedby={fieldErrors.password ? 'signin-password-error' : undefined}
                         autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => { setPassword(e.target.value); setFieldErrors((current) => ({ ...current, password: undefined })); }}
                         placeholder="••••••••"
                         className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#E5E7EB] rounded-xl text-xs text-[#191C1D] placeholder:text-[#8E8EA0] focus:ring-2 focus:ring-[#4F46E5]/20 focus:border-[#4F46E5] outline-none"
                       />
                     </div>
+                    {mode === 'login' && fieldErrors.password && <p id="signin-password-error" className="mt-1 text-xs text-rose-700" role="alert">{fieldErrors.password}</p>}
                   </div>
                 )}
 

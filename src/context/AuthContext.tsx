@@ -56,10 +56,10 @@ const mapUserResponse = (data: any, fallbackRole?: UserRole): UserProfile => {
     experience: Array.isArray(data.experience) ? data.experience : [],
     education: Array.isArray(data.education) ? data.education : [],
     createdAt: data.created_at || data.createdAt || new Date().toISOString(),
-    matchScore: data.match_score || data.matchScore || 85,
-    profileCompletion: data.profile_completion || data.profileCompletion || 70,
-    availabilityStatus: data.availability_status || data.availabilityStatus || 'Available',
-    yearsOfExperience: data.years_of_experience || data.yearsOfExperience || 2
+    matchScore: data.match_score ?? data.matchScore ?? undefined,
+    profileCompletion: data.profile_completion ?? data.profileCompletion ?? undefined,
+    availabilityStatus: data.availability_status ?? data.availabilityStatus ?? undefined,
+    yearsOfExperience: data.years_of_experience ?? data.yearsOfExperience ?? undefined
   };
 };
 
